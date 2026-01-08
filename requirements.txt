@@ -1,0 +1,35 @@
+# Core Backend
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+# Updated pydantic constraint for newer guardrails-ai
+pydantic>=2.0.0,<3.0.0
+pydantic-settings==2.1.0
+
+# LangChain & LangGraph
+# Updated to support interrupt_before feature
+# Note: May need to check guardrails-ai compatibility
+langchain-core>=0.1.18
+langchain-openai>=0.1.0
+langgraph>=0.2.0
+langsmith>=0.1.0
+
+# LLM
+# Compatible with langchain-openai 0.0.2 (requires openai>=1.6.1,<2.0.0)
+openai>=1.6.1,<2.0.0
+
+# RAG
+chromadb==0.4.22
+
+# Database
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.23
+alembic==1.12.1
+
+# Guardrails
+guardrails-ai>=0.7.0
+
+# Utilities
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+httpx==0.25.2
+

@@ -1,0 +1,71 @@
+"""SQLAlchemy database models."""
+from datetime import datetime
+from sqlalchemy import String, DateTime, Enum as SQLEnum
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from app.config import settings
+from app.models.domain import ApprovalStatus
+
+
+class Base(DeclarativeBase):
+    """Base class for all database models."""
+    pass
+
+
+class ApprovalDB(Base):
+    """Approval database model."""
+    __tablename__ = "approvals"
+    
+    approval_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    order_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[ApprovalStatus] = mapped_column(
+        SQLEnum(ApprovalStatus),
+        nullable=False,
+        default=ApprovalStatus.PENDING,
+        index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+
+# Database engine and session factory
+engine = create_async_engine(
+    settings.get_database_url,
+    echo=False,
+    future=True,
+    pool_pre_ping=True,
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+
+async def get_db() -> AsyncSession:
+    """Dependency for getting database session."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
+async def init_db():
+    """Initialize database tables."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+

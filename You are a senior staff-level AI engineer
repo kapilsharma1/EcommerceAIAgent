@@ -1,0 +1,220 @@
+You are a senior staff-level AI engineer building a production-grade AI Customer Support Agent for an e-commerce platform.
+
+Your task is to generate clean, modular, production-ready Python code using the following stack ONLY:
+
+Client UI:
+- React (frontend not required to be implemented, only API contracts)
+
+Core Backend:
+- Python 3.11
+- FastAPI
+- Pydantic
+- LangGraph
+- LangChain Core
+
+LLM:
+- OpenAI (chat completions / responses API)
+
+RAG:
+- Pinecone (pinecone-client)
+- Embeddings via OpenAI
+
+Guardrails:
+- Pydantic (strict schemas)
+- Guardrails AI (output validation)
+
+Human-in-the-Loop:
+- LangGraph (interrupt / wait states)
+- FastAPI
+- PostgreSQL (approval persistence)
+
+Observability:
+- LangSmith (tracing, debugging, evaluation)
+
+Strict architectural rules:
+1. LLMs NEVER mutate state directly
+2. All write actions must pass output guardrails
+3. Human approval is REQUIRED for all write actions
+4. Agent must loop when information is missing
+5. All LLM outputs MUST be structured JSON
+6. Fail-safe behavior is mandatory
+
+Generate code incrementally, respecting separation of concerns.
+
+
+
+
+Generate the full backend architecture for an AI-powered customer support agent with the following responsibilities:
+
+- Answer order-related questions
+- Detect delayed orders
+- Propose order cancellation or refund
+- Retrieve policies via RAG (Pinecone)
+- Loop until sufficient confidence is reached
+- Require human approval before executing write actions
+- Log all steps via LangSmith
+
+Use this folder structure:
+
+/app
+  /api
+  /agent
+  /graph
+  /llm
+  /rag
+  /guardrails
+  /actions
+  /approvals
+  /models
+  /observability
+  main.py
+
+Do NOT generate frontend code.
+Only generate backend code with FastAPI.
+
+
+
+Generate Pydantic models for the following domain concepts:
+
+1. Order
+   - order_id: str
+   - status: PLACED | SHIPPED | DELIVERED | CANCELLED
+   - expected_delivery_date: date
+   - amount: float
+   - refundable: bool
+
+2. AgentDecision
+   - final_answer: str
+   - action: NONE | CANCEL_ORDER | REFUND_ORDER
+   - order_id: Optional[str]
+   - confidence: float
+   - requires_human_approval: bool
+
+3. Approval
+   - approval_id: str
+   - order_id: str
+   - action: str
+   - status: PENDING | APPROVED | REJECTED
+   - created_at: datetime
+
+Use strict validation.
+
+
+
+
+Build a LangGraph agent with the following nodes:
+
+1. classify_intent
+2. fetch_order_data (tool)
+3. retrieve_policy (RAG via Pinecone)
+4. llm_reasoning
+5. output_guardrails
+6. human_approval (interrupt node)
+7. execute_write_action
+8. final_response
+
+Graph behavior:
+- If required data is missing → loop back to fetch nodes
+- If action != NONE → 반드시 go through human_approval
+- Graph must stop ONLY after final_response
+
+Use LangGraph StateGraph with explicit transitions.
+
+
+You are an AI customer support agent.
+
+Rules:
+- You must respond ONLY in valid JSON
+- You may NEVER execute actions
+- You may ONLY propose actions
+- If information is missing, ask for tools
+
+Output schema:
+
+{
+  "analysis": "string",
+  "final_answer": "string",
+  "action": "NONE | CANCEL_ORDER | REFUND_ORDER",
+  "order_id": "string | null",
+  "confidence": number,
+  "requires_human_approval": boolean,
+  "next_step": "NONE | FETCH_ORDER | FETCH_POLICY"
+}
+
+Do NOT add extra fields.
+
+
+
+Generate code to:
+
+- Embed policy documents using OpenAI embeddings
+- Store them in Pinecone
+- Query Pinecone using semantic similarity
+- Return top 3 policy chunks as context
+
+Use namespace "order-policies".
+
+
+
+Create Guardrails AI rules that enforce:
+
+- Valid JSON output
+- action ∈ allowed enum
+- confidence between 0 and 1
+- requires_human_approval = true if action != NONE
+- order_id must be present if action != NONE
+
+On failure:
+- Reject output
+- Return safe fallback response
+
+
+
+Implement human-in-the-loop approval:
+
+- Persist approval request in PostgreSQL
+- Pause LangGraph execution
+- Resume only after approval status = APPROVED
+- Reject action if status = REJECTED
+
+Use LangGraph interrupt / resume pattern.
+
+
+Generate backend services for write actions:
+
+- cancel_order(order_id)
+- refund_order(order_id)
+
+Rules:
+- Must be transactional
+- Must revalidate order state
+- Must be idempotent
+- LLM must NOT be involved
+
+Return execution status to agent graph.
+
+
+Instrument the entire agent flow using LangSmith:
+
+- Trace each LangGraph node
+- Log LLM inputs and outputs
+- Log tool calls
+- Tag traces with order_id
+- Enable debugging and replay
+
+Use langsmith decorators where applicable.
+
+
+
+Generate FastAPI endpoints:
+
+POST /chat
+- Accepts user message
+- Invokes LangGraph agent
+- Streams or returns final response
+
+POST /approvals/{approval_id}
+- Approve or reject action
+- Resume agent execution
+
+Use async handlers.

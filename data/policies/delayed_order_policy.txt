@@ -1,0 +1,24 @@
+DELAYED ORDER POLICY
+
+How we handle delayed orders:
+
+1. An order is considered delayed if it has not been delivered by the expected delivery date.
+2. For delayed orders, customers are entitled to:
+   - Full refund if order is more than 7 days past expected delivery date
+   - Partial refund or store credit if order is 3-7 days delayed
+   - Shipping fee refund if order is 1-3 days delayed
+
+3. Customers can request cancellation for delayed orders at any time.
+4. We will proactively reach out to customers if orders are delayed by more than 3 days.
+5. Delayed orders that are eventually delivered may still be eligible for compensation.
+
+Detection criteria:
+- Order status is PLACED or SHIPPED
+- Current date is past expected_delivery_date
+- Order has not been cancelled
+
+Action recommendations:
+- Orders delayed by 7+ days: Recommend cancellation with full refund
+- Orders delayed by 3-7 days: Offer cancellation or partial refund
+- Orders delayed by 1-3 days: Apologize and provide tracking update
+

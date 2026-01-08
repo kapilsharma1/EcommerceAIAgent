@@ -1,0 +1,17 @@
+REFUND POLICY
+
+Customers may request refunds for orders that meet the following criteria:
+
+1. Orders must be cancelled within 24 hours of placement for a full refund.
+2. Orders that have not yet shipped are eligible for full refunds.
+3. Shipped orders may be eligible for partial refunds if returned within 30 days of delivery.
+4. Delivered orders can be refunded if the product is defective or not as described.
+5. Digital products are non-refundable unless defective.
+6. Custom or personalized items are non-refundable.
+7. Refunds will be processed to the original payment method within 5-10 business days.
+
+For order cancellations:
+- Orders can be cancelled if status is PLACED or SHIPPED.
+- Cancelled orders are automatically refunded if payment was already processed.
+- Once an order is DELIVERED, it cannot be cancelled but may be eligible for return/refund.
+

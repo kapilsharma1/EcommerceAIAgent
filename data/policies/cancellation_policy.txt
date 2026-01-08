@@ -1,0 +1,19 @@
+ORDER CANCELLATION POLICY
+
+Order cancellation rules and procedures:
+
+1. Orders with status PLACED can be cancelled at any time before shipping.
+2. Orders with status SHIPPED can be cancelled, but may incur shipping fees.
+3. Orders with status DELIVERED cannot be cancelled.
+4. Orders with status CANCELLED are already cancelled and require no further action.
+
+Cancellation process:
+- Customer must request cancellation through support or account portal.
+- Cancellation requests are reviewed within 24 hours.
+- If order has already shipped, customer may need to return the item.
+- Refunds for cancelled orders are processed automatically.
+
+Special circumstances:
+- Delayed orders (past expected delivery date) may be eligible for cancellation with full refund.
+- Orders that are significantly delayed (more than 7 days past expected date) are automatically eligible for cancellation.
+
