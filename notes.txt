@@ -1,0 +1,14 @@
+http://localhost:8000/api/v1/chat
+
+
+{
+  "message": "Where is my order #12345?",
+  "conversation_id": "1"
+}
+
+
+{
+    "response": "I'm sorry, but as an AI, I don't have real-time access to order tracking information. However, I suggest you check your order status through your account dashboard or the order confirmation email you received. If you still have issues, please get in touch with our customer service team.",
+    "requires_approval": false,
+    "approval_id": null
+}
