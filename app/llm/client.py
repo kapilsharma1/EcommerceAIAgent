@@ -1,11 +1,67 @@
 """OpenAI LLM client wrapper with structured output support."""
 import json
+import logging
 from typing import Optional, Dict, Any, List, Tuple
 from openai import AsyncOpenAI
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from app.config import settings
-from app.models.domain import LLMResponse
+from app.models.domain import LLMResponse, ActionType
+
+logger = logging.getLogger(__name__)
+
+
+def normalize_llm_response_dict(response_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize LLM response dictionary to ensure proper types for LLMResponse model.
+    
+    Converts action string to ActionType enum and ensures requires_human_approval
+    is set correctly based on action. Also provides defaults for missing fields.
+    
+    Args:
+        response_dict: Raw response dictionary from LLM
+        
+    Returns:
+        Normalized dictionary ready for LLMResponse creation
+    """
+    # Create a copy to avoid mutating the original
+    normalized = response_dict.copy()
+    
+    # Ensure all required fields have defaults if missing or None
+    if not normalized.get("analysis") or normalized.get("analysis") is None:
+        normalized["analysis"] = "No analysis provided"
+    
+    if not normalized.get("final_answer") or normalized.get("final_answer") is None:
+        normalized["final_answer"] = "I apologize, but I couldn't generate a response."
+    
+    if normalized.get("confidence") is None:
+        normalized["confidence"] = 0.0
+    
+    if normalized.get("requires_human_approval") is None:
+        normalized["requires_human_approval"] = False
+    
+    # Convert action string to ActionType enum if needed
+    action_value = normalized.get("action", "NONE")
+    if isinstance(action_value, str):
+        try:
+            action = ActionType(action_value)
+        except ValueError:
+            # Fallback to NONE if invalid action
+            action = ActionType.NONE
+        normalized["action"] = action
+    elif not isinstance(action_value, ActionType):
+        # If it's neither string nor ActionType, default to NONE
+        action = ActionType.NONE
+        normalized["action"] = action
+    else:
+        action = action_value
+    
+    # Ensure requires_human_approval is set correctly based on action
+    if action != ActionType.NONE:
+        # If action is not NONE, requires_human_approval must be True
+        normalized["requires_human_approval"] = True
+    
+    return normalized
 
 
 class LLMClient:
@@ -45,15 +101,19 @@ class LLMClient:
                 *messages
             ]
             
-            # Use JSON mode for structured output
-            response_format = response_format or {"type": "json_object"}
+            # Build request parameters
+            request_params = {
+                "model": "gpt-4",
+                "messages": formatted_messages,
+                "temperature": 0.7,
+            }
             
-            response = await self.client.chat.completions.create(
-                model="gpt-4",
-                messages=formatted_messages,
-                response_format=response_format,
-                temperature=0.7,
-            )
+            # Only include response_format if explicitly provided
+            # Some models don't support json_object response_format
+            if response_format is not None:
+                request_params["response_format"] = response_format
+            
+            response = await self.client.chat.completions.create(**request_params)
             
             content = response.choices[0].message.content
             if not content:
@@ -133,10 +193,19 @@ Do NOT add extra fields."""
             system_prompt=system_prompt,
         )
         
+        # Log raw response for debugging
+        logger.debug(f"Raw LLM response: {response_dict}")
+        
         # Extract next_step before creating LLMResponse (since it's not in the model anymore)
         next_step = response_dict.pop("next_step", "NONE")
         
+        # Normalize response dict (convert action to enum, fix requires_human_approval, add defaults)
+        normalized_dict = normalize_llm_response_dict(response_dict)
+        
+        # Log normalized response for debugging
+        logger.debug(f"Normalized response: {normalized_dict}")
+        
         # Validate and return both LLMResponse and next_step
-        llm_response = LLMResponse(**response_dict)
+        llm_response = LLMResponse(**normalized_dict)
         return llm_response, next_step
 

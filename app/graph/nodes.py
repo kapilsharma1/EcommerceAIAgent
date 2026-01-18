@@ -2,7 +2,7 @@
 from typing import Dict, Any
 from langsmith import traceable
 from app.graph.state import AgentState
-from app.llm.client import LLMClient
+from app.llm.client import LLMClient, normalize_llm_response_dict
 from app.rag.chroma_client import ChromaClient
 from app.guardrails.validator import GuardrailsValidator
 from app.actions.mock_order_service import mock_order_service
@@ -207,7 +207,9 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
         return {}
     
     from app.models.domain import LLMResponse, ActionType
-    decision = LLMResponse(**agent_decision_dict)
+    # Normalize the dict to ensure proper enum types
+    normalized_dict = normalize_llm_response_dict(agent_decision_dict)
+    decision = LLMResponse(**normalized_dict)
     
     # Only create approval if action is not NONE
     if decision.action == ActionType.NONE:
@@ -262,7 +264,9 @@ async def execute_write_action(state: AgentState) -> Dict[str, Any]:
         return {}
     
     from app.models.domain import LLMResponse, ActionType
-    decision = LLMResponse(**agent_decision_dict)
+    # Normalize the dict to ensure proper enum types
+    normalized_dict = normalize_llm_response_dict(agent_decision_dict)
+    decision = LLMResponse(**normalized_dict)
     
     # Execute action
     result = await mock_order_service.execute_action(
@@ -295,7 +299,9 @@ def format_final_response(state: AgentState) -> Dict[str, Any]:
         }
     
     from app.models.domain import LLMResponse
-    decision = LLMResponse(**agent_decision_dict)
+    # Normalize the dict to ensure proper enum types
+    normalized_dict = normalize_llm_response_dict(agent_decision_dict)
+    decision = LLMResponse(**normalized_dict)
     
     # Build final response
     response = decision.final_answer

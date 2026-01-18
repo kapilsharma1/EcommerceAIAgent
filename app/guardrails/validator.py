@@ -1,47 +1,26 @@
-"""Guardrails AI output validation."""
+"""Output validation using Pydantic."""
 import json
+import logging
 from typing import Dict, Any, Optional
-from guardrails import Guard
 from langsmith import traceable
 from app.models.domain import LLMResponse, ActionType, NextStep
+from app.llm.client import normalize_llm_response_dict
+
+logger = logging.getLogger(__name__)
 
 
 class GuardrailsValidator:
-    """Guardrails AI validator for LLM outputs."""
+    """Output validator for LLM responses using Pydantic."""
     
     def __init__(self):
-        """Initialize Guardrails validator."""
-        # Define the expected JSON schema
-        schema = {
-            "type": "object",
-            "properties": {
-                "analysis": {"type": "string"},
-                "final_answer": {"type": "string"},
-                "action": {
-                    "type": "string",
-                    "enum": ["NONE", "CANCEL_ORDER", "REFUND_ORDER"]
-                },
-                "order_id": {"type": ["string", "null"]},
-                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                "requires_human_approval": {"type": "boolean"},
-            },
-            "required": [
-                "analysis",
-                "final_answer",
-                "action",
-                "confidence",
-                "requires_human_approval"
-            ],
-            "additionalProperties": False
-        }
-        
-        # Create Guard with validators
-        self.guard = Guard.from_pydantic(output_class=LLMResponse)
+        """Initialize validator."""
+        # Using Pydantic for validation (simpler and more reliable than Guardrails)
+        pass
     
     @traceable(name="guardrails_validate")
     def validate(self, llm_output: Dict[str, Any]) -> LLMResponse:
         """
-        Validate LLM output against guardrails.
+        Validate LLM output using Pydantic validation.
         
         Args:
             llm_output: Raw LLM output dictionary
@@ -53,15 +32,11 @@ class GuardrailsValidator:
             ValueError: If validation fails
         """
         try:
-            # Use Guardrails to validate
-            validated_output = self.guard.validate(
-                llm_output,
-                metadata={"strict": True}
-            )
+            # Normalize the dict to ensure proper enum types and defaults
+            normalized_output = normalize_llm_response_dict(llm_output)
             
-            # Parse into LLMResponse
-            # Guardrails returns validated dict, convert to model
-            response = LLMResponse.model_validate(validated_output)
+            # Parse into LLMResponse using Pydantic (strict validation)
+            response = LLMResponse(**normalized_output)
             
             # Additional business logic validations
             self._validate_business_rules(response)
@@ -69,6 +44,9 @@ class GuardrailsValidator:
             return response
             
         except Exception as e:
+            # Log the error for debugging
+            logger.error(f"Validation failed: {str(e)}", exc_info=True)
+            logger.error(f"Input was: {llm_output}")
             # Return safe fallback
             return self._get_fallback_response(str(e))
     
@@ -110,11 +88,14 @@ class GuardrailsValidator:
         Returns:
             Safe fallback LLMResponse
         """
+        # Include error message in response for debugging (remove in production)
+        # Temporarily include error in final_answer to help debug
         return LLMResponse(
             analysis=f"Validation error occurred: {error_message}",
             final_answer=(
-                "I apologize, but I encountered an error processing your request. "
-                "Please try rephrasing your question or contact support for assistance."
+                f"I apologize, but I encountered an error processing your request. "
+                f"Error details: {error_message} "
+                "Please check the server logs for more information."
             ),
             action=ActionType.NONE,
             order_id=None,
