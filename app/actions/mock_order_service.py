@@ -1,8 +1,11 @@
 """Mock order service for testing."""
+import logging
 from datetime import date, timedelta
 from typing import Dict, Any, Optional
 from app.models.domain import Order, OrderStatus
 from app.actions.order_service import OrderService
+
+logger = logging.getLogger(__name__)
 
 
 class MockOrderRepository:
@@ -50,7 +53,14 @@ class MockOrderRepository:
     
     async def get_order(self, order_id: str) -> Optional[Order]:
         """Get order by ID."""
-        return self.orders.get(order_id)
+        logger.info(f"ORDER_REPO: get_order - order_id: {order_id}")
+        order = self.orders.get(order_id)
+        if order:
+            logger.info(f"ORDER_REPO: Order found - order_id: {order.order_id}, status: {order.status}")
+        else:
+            logger.warning(f"ORDER_REPO: Order not found - order_id: {order_id}")
+            logger.debug(f"ORDER_REPO: Available order IDs: {list(self.orders.keys())}")
+        return order
     
     async def update_order_status(
         self,

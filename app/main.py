@@ -1,4 +1,6 @@
 """FastAPI main application."""
+import logging
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,28 +9,56 @@ from app.models.database import init_db
 from app.observability.tracing import setup_observability
 from app.api.routes import router
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Set specific loggers to DEBUG for more detailed output
+logging.getLogger("app").setLevel(logging.DEBUG)
+logging.getLogger("app.api").setLevel(logging.DEBUG)
+logging.getLogger("app.graph").setLevel(logging.DEBUG)
+logging.getLogger("app.llm").setLevel(logging.DEBUG)
+logging.getLogger("app.rag").setLevel(logging.DEBUG)
+logging.getLogger("app.actions").setLevel(logging.DEBUG)
+
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    print("Starting up...")
+    logger.info("=" * 80)
+    logger.info("APPLICATION STARTUP")
+    logger.info("=" * 80)
     
     # Setup observability
+    logger.info("Setting up observability...")
     setup_observability()
-    print("Observability configured")
+    logger.info("Observability configured")
     
     # Initialize database
     try:
+        logger.info("Initializing database...")
         await init_db()
-        print("Database initialized")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"Database initialization warning: {e}")
+        logger.warning(f"Database initialization warning: {e}", exc_info=True)
+    
+    logger.info("Application startup complete")
+    logger.info("=" * 80)
     
     yield
     
     # Shutdown
-    print("Shutting down...")
+    logger.info("=" * 80)
+    logger.info("APPLICATION SHUTDOWN")
+    logger.info("=" * 80)
 
 
 # Create FastAPI app

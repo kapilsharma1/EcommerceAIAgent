@@ -1,8 +1,11 @@
 """Transactional write action services for orders."""
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 from langsmith import traceable
 from app.models.domain import Order, OrderStatus, ActionType
+
+logger = logging.getLogger(__name__)
 
 
 class OrderService:
@@ -158,7 +161,10 @@ class OrderService:
         Returns:
             Execution status dictionary
         """
+        logger.info(f"ORDER_SERVICE: execute_action - START - action: {action}, order_id: {order_id}")
+        
         if action == ActionType.NONE:
+            logger.info("ORDER_SERVICE: Action is NONE, returning success")
             return {
                 "success": True,
                 "message": "No action to execute",
@@ -166,20 +172,36 @@ class OrderService:
             }
         
         if not order_id:
+            logger.warning("ORDER_SERVICE: order_id is required but not provided")
             return {
                 "success": False,
                 "error": "order_id is required for write actions",
                 "action": action.value,
             }
         
-        if action == ActionType.CANCEL_ORDER:
-            return await self.cancel_order(order_id)
-        elif action == ActionType.REFUND_ORDER:
-            return await self.refund_order(order_id)
-        else:
+        try:
+            if action == ActionType.CANCEL_ORDER:
+                logger.info(f"ORDER_SERVICE: Executing cancel_order for {order_id}")
+                result = await self.cancel_order(order_id)
+            elif action == ActionType.REFUND_ORDER:
+                logger.info(f"ORDER_SERVICE: Executing refund_order for {order_id}")
+                result = await self.refund_order(order_id)
+            else:
+                logger.error(f"ORDER_SERVICE: Unknown action: {action}")
+                result = {
+                    "success": False,
+                    "error": f"Unknown action: {action}",
+                    "action": action.value,
+                }
+            
+            logger.info(f"ORDER_SERVICE: execute_action result - success: {result.get('success')}, message: {result.get('message', result.get('error', 'N/A'))}")
+            logger.info("ORDER_SERVICE: execute_action - END")
+            return result
+        except Exception as e:
+            logger.error(f"ORDER_SERVICE: Error executing action: {str(e)}", exc_info=True)
             return {
                 "success": False,
-                "error": f"Unknown action: {action}",
+                "error": f"Error executing action: {str(e)}",
                 "action": action.value,
             }
 
