@@ -145,7 +145,38 @@ async def chat(
         logger.info(f"Approval required: {requires_approval}, approval_id: {approval_id}")
         
         # Get final response
-        final_response = result.get("final_response", "I apologize, but I couldn't process your request.")
+        # 
+        # IMPORTANT: Fallback logic for interrupted graph execution
+        # 
+        # Normal flow: format_final_response node sets final_response in state
+        # However, with interrupt_after=["human_approval"], the graph can be interrupted
+        # AFTER human_approval runs but BEFORE format_final_response runs.
+        # 
+        # In this scenario:
+        # 1. llm_reasoning node creates agent_decision with final_answer field
+        # 2. human_approval node runs and graph interrupts (waiting for approval)
+        # 3. format_final_response node hasn't run yet, so final_response is None
+        # 4. But agent_decision.final_answer already contains the LLM's response
+        # 
+        # Solution: Use agent_decision.final_answer as fallback when final_response is missing
+        # This ensures we always return a meaningful response to the user, even when
+        # the graph execution is interrupted before reaching format_final_response.
+        #
+        # Example scenario:
+        # - User: "Cancel order ORD-12345"
+        # - Flow: llm_reasoning → output_guardrails → human_approval → [INTERRUPT]
+        # - format_final_response never runs, but agent_decision.final_answer has the answer
+        final_response = result.get("final_response")
+        if not final_response:
+            # Fallback: Extract response from agent_decision if format_final_response didn't run
+            agent_decision = result.get("agent_decision")
+            if agent_decision and isinstance(agent_decision, dict):
+                final_response = agent_decision.get("final_answer")
+        
+        # Final fallback: Use default error message if no response found anywhere
+        if not final_response:
+            final_response = "I apologize, but I couldn't process your request."
+        
         logger.info(f"Final response: {final_response}")
         
         if not final_response or final_response == "I apologize, but I couldn't process your request.":

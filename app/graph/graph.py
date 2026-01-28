@@ -158,7 +158,7 @@ def build_agent_graph(approval_service, checkpointer=None):
         """
         Human approval node wrapper.
         
-        Note: The graph interrupts BEFORE this node runs (via interrupt_before).
+        Note: The graph interrupts AFTER this node runs (via interrupt_after).
         When resumed, this node will:
         1. Check if approval already exists (from before interrupt)
         2. If exists, fetch current status (may have been updated)
@@ -166,7 +166,7 @@ def build_agent_graph(approval_service, checkpointer=None):
         4. Return approval info for routing
         """
         result = await human_approval(state, approval_service)
-        # The interrupt happens BEFORE this node runs (via interrupt_before parameter)
+        # The interrupt happens AFTER this node runs (via interrupt_after parameter)
         # When this node executes after resume, it will have the current approval status
         return result
     
@@ -215,6 +215,7 @@ def build_agent_graph(approval_service, checkpointer=None):
         "human_approval",
         should_require_approval,
         {
+            "human_approval": "human_approval",  # Add this for re-routing
             "execute_write_action": "execute_write_action",
             "format_final_response": "format_final_response",
         }
@@ -236,7 +237,7 @@ def build_agent_graph(approval_service, checkpointer=None):
     
     app = workflow.compile(
         checkpointer=checkpointer,
-        interrupt_before=["human_approval"],  # Interrupt before human approval
+        interrupt_after=["human_approval"],  # Interrupt after human approval
     )
     
     logger.info("Agent graph built successfully")
