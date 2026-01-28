@@ -131,12 +131,13 @@ def should_loop(state: AgentState) -> Literal["fetch_order_data", "retrieve_poli
 
 
 @traceable(name="build_agent_graph")
-def build_agent_graph(approval_service):
+def build_agent_graph(approval_service, checkpointer=None):
     """
     Build the LangGraph agent graph.
     
     Args:
         approval_service: Approval service instance
+        checkpointer: Optional checkpointer instance (if None, creates new MemorySaver)
         
     Returns:
         Compiled graph
@@ -227,9 +228,14 @@ def build_agent_graph(approval_service):
     
     # Compile with memory for checkpointing (needed for interrupts)
     logger.info("Compiling graph with checkpointing...")
-    memory = MemorySaver()
+    if checkpointer is None:
+        checkpointer = MemorySaver()
+        logger.info("Created new MemorySaver checkpointer")
+    else:
+        logger.info("Using provided checkpointer instance")
+    
     app = workflow.compile(
-        checkpointer=memory,
+        checkpointer=checkpointer,
         interrupt_before=["human_approval"],  # Interrupt before human approval
     )
     

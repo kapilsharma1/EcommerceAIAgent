@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Store graph instances and checkpoints (in production, use Redis or database)
-graph_instances: Dict[str, Any] = {}
-checkpoints: Dict[str, MemorySaver] = {}
+# Shared checkpointer for all conversations (in production, use Redis or database)
+# Each conversation is differentiated by thread_id in the config
+_shared_checkpointer = MemorySaver()
+_graph_instance = None  # Single graph instance for all conversations
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -48,44 +49,64 @@ async def chat(
         approval_service = ApprovalService(db)
         logger.info("ApprovalService initialized successfully")
         
-        # Build or get graph
-        conversation_id = request.conversation_id or f"conv-{uuid.uuid4().hex[:8]}"
-        logger.info(f"Using conversation_id: {conversation_id}")
-        
-        if conversation_id not in graph_instances:
-            logger.info(f"Building new graph instance for conversation_id: {conversation_id}")
-            graph_instances[conversation_id] = build_agent_graph(approval_service)
-            checkpoints[conversation_id] = MemorySaver()
+        # Build or get graph (single instance for all conversations)
+        global _graph_instance
+        if _graph_instance is None:
+            logger.info("Building graph instance (shared across all conversations)...")
+            _graph_instance = build_agent_graph(approval_service, checkpointer=_shared_checkpointer)
             logger.info("Graph instance created successfully")
         else:
-            logger.info(f"Reusing existing graph instance for conversation_id: {conversation_id}")
+            logger.info("Using existing shared graph instance")
         
-        graph = graph_instances[conversation_id]
-        checkpoint = checkpoints[conversation_id]
+        graph = _graph_instance
         
-        # Prepare initial state
-        logger.info("Preparing initial state...")
-        initial_state: AgentState = {
-            "user_message": request.message,
-            "conversation_history": [],
-            "order_data": None,
-            "policy_context": None,
-            "agent_decision": None,
-            "approval_id": None,
-            "approval_status": None,
-            "execution_result": None,
-            "confidence": 0.0,
-            "iteration_count": 0,
-            "next_step": "NONE",
-            "final_response": None,
-            # Store conversation_id in state for access in nodes
-            "_conversation_id": conversation_id,
-        }
-        logger.info(f"Initial state prepared: user_message='{request.message}', next_step='NONE'")
+        # Get conversation_id for thread_id
+        conversation_id = request.conversation_id or f"conv-{uuid.uuid4().hex[:8]}"
+        logger.info(f"Using conversation_id (thread_id): {conversation_id}")
         
         # Create config for checkpointing
         config = {"configurable": {"thread_id": conversation_id}}
         logger.info(f"Checkpoint config: {config}")
+        
+        # Load previous state from checkpoint if it exists
+        conversation_history = []
+        previous_state = None
+        
+        try:
+            # Try to get the latest checkpoint state for this thread_id
+            from langgraph.checkpoint.base import Checkpoint
+            checkpoint_list = _shared_checkpointer.list(config, limit=1)
+            if checkpoint_list:
+                checkpoint_id = checkpoint_list[0].get("checkpoint_id")
+                if checkpoint_id:
+                    checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
+                    if checkpoint_data and checkpoint_data.get("channel_values"):
+                        previous_state = checkpoint_data["channel_values"]
+                        conversation_history = previous_state.get("conversation_history", [])
+                        logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
+        except Exception as e:
+            logger.warning(f"Could not load previous state from checkpoint: {str(e)}")
+            conversation_history = []
+        
+        # Prepare initial state - use loaded conversation_history
+        logger.info("Preparing initial state...")
+        initial_state: AgentState = {
+            "user_message": request.message,  # New message for this request
+            "conversation_history": conversation_history,  # Loaded from checkpoint
+            "order_data": None,  # Reset for new request
+            "policy_context": None,  # Reset for new request
+            "agent_decision": None,  # Reset for new request
+            "approval_id": None,  # Reset for new request
+            "approval_status": None,  # Reset for new request
+            "execution_result": None,  # Reset for new request
+            "confidence": 0.0,  # Reset for new request
+            "iteration_count": 0,  # Reset for new request
+            "next_step": "NONE",  # Reset for new request
+            "final_response": None,  # Reset for new request
+            "_conversation_id": conversation_id,
+        }
+        
+        logger.info(f"Initial state prepared: user_message='{request.message}', conversation_history={len(conversation_history)} messages")
         
         # Invoke graph
         logger.info("Starting graph execution...")
@@ -212,14 +233,15 @@ async def approve_action(
                 message=message,
             )
         
-        # Get graph instance for this conversation
-        if conversation_id not in graph_instances:
+        # Use the shared graph instance
+        global _graph_instance
+        if _graph_instance is None:
             raise HTTPException(
-                status_code=404,
-                detail=f"Graph instance not found for conversation {conversation_id}"
+                status_code=500,
+                detail="Graph instance not initialized"
             )
         
-        graph = graph_instances[conversation_id]
+        graph = _graph_instance
         config = {"configurable": {"thread_id": conversation_id}}
         
         # Resume graph execution (pass None to continue from checkpoint)

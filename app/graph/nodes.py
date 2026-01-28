@@ -573,12 +573,30 @@ def format_final_response(state: AgentState) -> Dict[str, Any]:
         response += f"\n\nNote: {error}"
         logger.info(f"Added execution error message: {error}")
     
+    # Update conversation_history with this exchange
+    conversation_history = state.get("conversation_history", [])
+    user_message = state.get("user_message", "")
+    
+    # Add user message and assistant response to history
+    updated_history = conversation_history.copy()
+    if user_message:
+        updated_history.append({
+            "role": "user",
+            "content": user_message
+        })
+    updated_history.append({
+        "role": "assistant",
+        "content": response
+    })
+    
     result = {
         "final_response": response,
+        "conversation_history": updated_history,  # Save updated history to checkpoint
     }
     
     logger.info(f"Output state - final_response length: {len(response)}")
     logger.info(f"Output state - final_response: {response[:200]}..." if len(response) > 200 else f"Output state - final_response: {response}")
+    logger.info(f"Output state - conversation_history: {len(updated_history)} messages (added 2 new messages)")
     logger.info(">>> NODE: format_final_response - END")
     
     return result
