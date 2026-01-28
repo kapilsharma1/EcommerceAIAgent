@@ -1,6 +1,7 @@
 """OpenAI LLM client wrapper with structured output support."""
 import json
 import logging
+from datetime import date
 from typing import Optional, Dict, Any, List, Tuple
 from openai import AsyncOpenAI
 from langchain_openai import ChatOpenAI
@@ -154,6 +155,7 @@ class LLMClient:
         conversation_history: List[Dict[str, str]],
         order_data: Optional[Dict[str, Any]] = None,
         policy_context: Optional[str] = None,
+        current_date: Optional[date] = None,
     ) -> Tuple[LLMResponse, str]:
         """
         Get structured agent decision from LLM.
@@ -163,6 +165,7 @@ class LLMClient:
             conversation_history: Previous conversation messages
             order_data: Optional order data
             policy_context: Optional policy context from RAG
+            current_date: Optional current date for time-based decision making
             
         Returns:
             Tuple of (LLMResponse with structured decision, next_step value)
@@ -172,6 +175,7 @@ class LLMClient:
         logger.info(f"LLM: conversation_history length: {len(conversation_history)}")
         logger.info(f"LLM: order_data: {'present' if order_data else 'None'}")
         logger.info(f"LLM: policy_context: {'present' if policy_context else 'None'}")
+        logger.info(f"LLM: current_date: {current_date}")
         
         system_prompt = """You are an AI customer support agent.
 
@@ -184,6 +188,9 @@ Rules:
 - If order data is missing, explain that you need to fetch the order information
 - If you cannot answer due to missing data, provide a helpful message explaining what information is needed
 - Be conversational and helpful in your final_answer
+- Use the Current Date provided in context to determine if orders are delayed
+- Compare Current Date with expected_delivery_date to calculate delay duration
+- Apply time-based cancellation rules (e.g., 7+ days delayed = auto-eligible for cancellation)
 
 Output schema:
 {
@@ -205,6 +212,9 @@ Do NOT add extra fields."""
 
         # Build context
         context_parts = []
+        if current_date:
+            context_parts.append(f"Current Date: {current_date.isoformat()}")
+            logger.debug(f"LLM: Added current_date to context: {current_date}")
         if order_data:
             context_parts.append(f"Order Data: {json.dumps(order_data, default=str)}")
             logger.debug(f"LLM: Added order_data to context (length: {len(context_parts[-1])})")

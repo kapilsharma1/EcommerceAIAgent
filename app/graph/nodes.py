@@ -271,6 +271,11 @@ async def llm_reasoning(state: AgentState) -> Dict[str, Any]:
     if order_obj:
         order_dict = order_obj.model_dump(mode="json")
     
+    # Add current date to context for time-based decision making
+    from datetime import date
+    current_date = date.today()
+    logger.info(f"Current date: {current_date}")
+    
     logger.info("Calling LLM client for agent decision...")
     try:
         llm_response, next_step = await llm_client.get_agent_decision(
@@ -278,6 +283,7 @@ async def llm_reasoning(state: AgentState) -> Dict[str, Any]:
             conversation_history=conversation_history,
             order_data=order_dict,
             policy_context=policy_context,
+            current_date=current_date,
         )
         logger.info(f"LLM response received - action: {llm_response.action}, confidence: {llm_response.confidence}")
         logger.info(f"LLM response - final_answer: {llm_response.final_answer[:100]}..." if len(llm_response.final_answer) > 100 else f"LLM response - final_answer: {llm_response.final_answer}")
