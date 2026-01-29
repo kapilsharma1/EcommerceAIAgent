@@ -11,6 +11,7 @@ class OrderStatus(str, Enum):
     SHIPPED = "SHIPPED"
     DELIVERED = "DELIVERED"
     CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
 
 
 class ActionType(str, Enum):

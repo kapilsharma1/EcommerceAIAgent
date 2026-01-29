@@ -52,6 +52,13 @@ class OrderService:
                     "status": "already_cancelled",
                 }
             
+            if order.status == OrderStatus.REFUNDED:
+                return {
+                    "success": False,
+                    "error": f"Cannot cancel refunded order {order_id}",
+                    "order_id": order_id,
+                }
+            
             if order.status == OrderStatus.DELIVERED:
                 return {
                     "success": False,
@@ -111,15 +118,12 @@ class OrderService:
                 }
             
             # Check if already refunded (idempotent check)
-            # In a real system, you'd have a refund status field
-            # For now, we'll check if order is cancelled or delivered
-            if order.status == OrderStatus.CANCELLED:
-                # Already cancelled, consider refund processed
+            if order.status == OrderStatus.REFUNDED:
                 return {
                     "success": True,
-                    "message": f"Order {order_id} refund processed (order was cancelled)",
+                    "message": f"Order {order_id} is already refunded",
                     "order_id": order_id,
-                    "status": "refunded",
+                    "status": "already_refunded",
                 }
             
             # Transactional: process refund
@@ -129,6 +133,12 @@ class OrderService:
                 amount=order.amount,
             )
             
+            # Update order status to REFUNDED to prevent duplicate refunds
+            updated_order = await self.order_repository.update_order_status(
+                order_id=order_id,
+                new_status=OrderStatus.REFUNDED,
+            )
+            
             return {
                 "success": True,
                 "message": f"Refund of ${order.amount} processed for order {order_id}",
@@ -136,6 +146,7 @@ class OrderService:
                 "status": "refunded",
                 "amount": order.amount,
                 "refund_id": refund_result.get("refund_id") if refund_result else None,
+                "order": updated_order.dict() if hasattr(updated_order, 'dict') else updated_order,
             }
             
         except Exception as e:
