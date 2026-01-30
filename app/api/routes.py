@@ -238,17 +238,27 @@ async def approve_action(
                 detail="Status must be APPROVED or REJECTED"
             )
         
-        # Update approval
+        # Get approval service and check current status
         approval_service = ApprovalService(db)
         status = ApprovalStatus.APPROVED if request.status.upper() == "APPROVED" else ApprovalStatus.REJECTED
         
+        # Get current approval status before updating
+        current_approval = await approval_service.get_approval(approval_id)
+        if not current_approval:
+            raise HTTPException(status_code=404, detail="Approval not found")
+        
+        # Prevent updating if approval is already processed
+        if current_approval.status in [ApprovalStatus.APPROVED, ApprovalStatus.REJECTED]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Approval {approval_id} is already {current_approval.status.value.lower()}. Cannot update an already processed approval."
+            )
+        
+        # Update approval (only if still PENDING)
         approval = await approval_service.update_approval(
             approval_id=approval_id,
             status=status,
         )
-        
-        if not approval:
-            raise HTTPException(status_code=404, detail="Approval not found")
         
         # Find conversation that has this approval
         conversation_id = approval_to_conversation.get(approval_id)
