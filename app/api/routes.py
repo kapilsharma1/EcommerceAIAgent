@@ -107,6 +107,7 @@ async def chat(
         }
         
         logger.info(f"Initial state prepared: user_message='{request.message}', conversation_history={len(conversation_history)} messages")
+        logger.info(f"Initial state _conversation_id: {initial_state.get('_conversation_id')}")
         
         # Invoke graph
         logger.info("Starting graph execution...")
@@ -228,6 +229,12 @@ async def approve_action(
     Returns:
         Approval response
     """
+    logger.info("=" * 80)
+    logger.info("APPROVAL API REQUEST RECEIVED")
+    logger.info(f"Approval ID: {approval_id}")
+    logger.info(f"Status: {request.status}")
+    logger.info("=" * 80)
+    
     try:
         from app.models.domain import ApprovalStatus
         
@@ -243,27 +250,36 @@ async def approve_action(
         status = ApprovalStatus.APPROVED if request.status.upper() == "APPROVED" else ApprovalStatus.REJECTED
         
         # Get current approval status before updating
+        logger.info(f"Fetching current approval status for {approval_id}...")
         current_approval = await approval_service.get_approval(approval_id)
         if not current_approval:
+            logger.error(f"Approval {approval_id} not found")
             raise HTTPException(status_code=404, detail="Approval not found")
+        
+        logger.info(f"Current approval status: {current_approval.status.value}")
         
         # Prevent updating if approval is already processed
         if current_approval.status in [ApprovalStatus.APPROVED, ApprovalStatus.REJECTED]:
+            logger.warning(f"Approval {approval_id} is already {current_approval.status.value.lower()}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Approval {approval_id} is already {current_approval.status.value.lower()}. Cannot update an already processed approval."
             )
         
         # Update approval (only if still PENDING)
+        logger.info(f"Updating approval {approval_id} to status: {status.value}")
         approval = await approval_service.update_approval(
             approval_id=approval_id,
             status=status,
         )
+        logger.info(f"Approval updated successfully")
         
         # Find conversation that has this approval
         conversation_id = approval_to_conversation.get(approval_id)
+        logger.info(f"Conversation ID for approval: {conversation_id}")
         
         if not conversation_id:
+            logger.warning(f"No conversation_id mapping found for approval {approval_id}")
             # If mapping not found, return response without resuming
             # (This can happen if the mapping was lost or approval was created differently)
             message = (
@@ -277,6 +293,7 @@ async def approve_action(
         # Use the shared graph instance
         global _graph_instance
         if _graph_instance is None:
+            logger.error("Graph instance is None!")
             raise HTTPException(
                 status_code=500,
                 detail="Graph instance not initialized"
@@ -284,17 +301,25 @@ async def approve_action(
         
         graph = _graph_instance
         config = {"configurable": {"thread_id": conversation_id}}
+        logger.info(f"Resuming graph with config: {config}")
         
         # Resume graph execution (pass None to continue from checkpoint)
+        # Use ainvoke to run graph to completion instead of astream
         result = None
         try:
-            async for event in graph.astream(
+            logger.info("Starting graph resumption...")
+            result = await graph.ainvoke(
                 None,  # None means continue from checkpoint
                 config=config,
-                stream_mode="values",
-            ):
-                result = event
+            )
+            logger.info("Graph resumption completed via ainvoke")
+            logger.debug(f"Result state keys: {list(result.keys()) if result else 'None'}")
+            logger.debug(f"Result next_step: {result.get('next_step') if result else 'None'}")
+            logger.debug(f"Result approval_status: {result.get('approval_status') if result else 'None'}")
+            logger.debug(f"Result execution_result: {'present' if result.get('execution_result') else 'None'}")
+            logger.debug(f"Result final_response: {'present' if result.get('final_response') else 'None'}")
         except Exception as e:
+            logger.error(f"Error resuming graph: {str(e)}", exc_info=True)
             # If resume fails, still return approval response
             message = (
                 f"Action {approval.action} for order {approval.order_id} has been {status.value.lower()}, "
@@ -306,9 +331,18 @@ async def approve_action(
             )
         
         # Build response message
+        logger.info(f"Building response - result is {'present' if result else 'None'}")
         if result:
             final_response = result.get("final_response", "")
             execution_result = result.get("execution_result")
+            
+            logger.info(f"Final response: {'present' if final_response else 'empty'}")
+            logger.info(f"Execution result: {'present' if execution_result else 'None'}")
+            if execution_result:
+                logger.info(f"Execution success: {execution_result.get('success')}")
+                logger.info(f"Execution message: {execution_result.get('message', 'N/A')}")
+                if not execution_result.get('success'):
+                    logger.warning(f"Execution error: {execution_result.get('error', 'N/A')}")
             
             message = (
                 f"Action {approval.action} for order {approval.order_id} has been {status.value.lower()}."
@@ -322,9 +356,16 @@ async def approve_action(
             if final_response:
                 message += f" Agent response: {final_response}"
         else:
+            logger.warning("Result is None - graph may not have resumed properly")
             message = (
                 f"Action {approval.action} for order {approval.order_id} has been {status.value.lower()}."
             )
+        
+        logger.info("=" * 80)
+        logger.info("APPROVAL API RESPONSE")
+        logger.info(f"Status: {status.value.lower()}")
+        logger.info(f"Message: {message}")
+        logger.info("=" * 80)
         
         return ApprovalResponse(
             status=status.value.lower(),
@@ -334,5 +375,11 @@ async def approve_action(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("=" * 80)
+        logger.error("ERROR IN APPROVAL API")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error("Full exception:", exc_info=True)
+        logger.error("=" * 80)
         raise HTTPException(status_code=500, detail=f"Error processing approval: {str(e)}")
 

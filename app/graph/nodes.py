@@ -438,13 +438,19 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
     # Store approval_id -> conversation_id mapping for graph resumption
     # Access conversation_id from state (stored by API route)
     conversation_id = state.get("_conversation_id")
+    logger.info(f"Checking for _conversation_id in state: {conversation_id}")
+    logger.debug(f"Full state keys: {list(state.keys())}")
+    
     if conversation_id:
         logger.info(f"Storing approval mapping: {approval.approval_id} -> {conversation_id}")
         # Import here to avoid circular dependency
         from app.api.approval_mapping import approval_to_conversation
         approval_to_conversation[approval.approval_id] = conversation_id
+        logger.info(f"Mapping stored successfully. Current mappings: {list(approval_to_conversation.keys())}")
     else:
         logger.warning("No conversation_id in state, cannot store approval mapping")
+        logger.warning(f"State keys available: {list(state.keys())}")
+        logger.warning("This will prevent graph resumption after approval!")
     
     # Return approval info (status will be PENDING for new approvals)
     result = {

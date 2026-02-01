@@ -15,7 +15,7 @@ from app.graph.nodes import (
     execute_write_action,
     format_final_response,
 )
-from app.models.domain import NextStep, ActionType
+from app.models.domain import NextStep, ActionType, ApprovalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +88,12 @@ def should_require_approval(state: AgentState) -> Literal["human_approval", "exe
         logger.debug(f"ROUTING: should_require_approval - approval_status: {approval_status}")
         
         # If already approved, execute
-        if approval_status and str(approval_status) == "APPROVED":
+        if approval_status == ApprovalStatus.APPROVED:
             logger.info("ROUTING: -> execute_write_action (already approved)")
             return "execute_write_action"
         
         # If rejected, skip to final response
-        if approval_status and str(approval_status) == "REJECTED":
+        if approval_status == ApprovalStatus.REJECTED:
             logger.info("ROUTING: -> format_final_response (rejected)")
             return "format_final_response"
         

@@ -30,4 +30,7 @@ class AgentState(TypedDict):
     
     # Final output
     final_response: Optional[str]
+    
+    # Internal metadata (not user-facing)
+    _conversation_id: Optional[str]  # Conversation ID for checkpointing and approval mapping
 
