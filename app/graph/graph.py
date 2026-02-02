@@ -12,6 +12,7 @@ from app.graph.nodes import (
     llm_reasoning,
     output_guardrails,
     human_approval,
+    check_approval_status,
     execute_write_action,
     format_final_response,
 )
@@ -153,24 +154,18 @@ def build_agent_graph(approval_service, checkpointer=None):
     workflow.add_node("llm_reasoning", llm_reasoning)
     workflow.add_node("output_guardrails", output_guardrails)
     
-    # Human approval node (will interrupt)
+    # Human approval node - creates approval request
     async def human_approval_node(state: AgentState):
-        """
-        Human approval node wrapper.
-        
-        Note: The graph interrupts AFTER this node runs (via interrupt_after).
-        When resumed, this node will:
-        1. Check if approval already exists (from before interrupt)
-        2. If exists, fetch current status (may have been updated)
-        3. If not exists, create new approval
-        4. Return approval info for routing
-        """
-        result = await human_approval(state, approval_service)
-        # The interrupt happens AFTER this node runs (via interrupt_after parameter)
-        # When this node executes after resume, it will have the current approval status
-        return result
+        """Human approval node wrapper - creates approval if needed."""
+        return await human_approval(state, approval_service)
+    
+    # Check approval status node - validates status and interrupts if PENDING
+    async def check_approval_status_node(state: AgentState):
+        """Check approval status node wrapper - validates and interrupts if needed."""
+        return await check_approval_status(state, approval_service)
     
     workflow.add_node("human_approval", human_approval_node)
+    workflow.add_node("check_approval_status", check_approval_status_node)
     workflow.add_node("execute_write_action", execute_write_action)
     workflow.add_node("format_final_response", format_final_response)
     
@@ -210,12 +205,26 @@ def build_agent_graph(approval_service, checkpointer=None):
         }
     )
     
-    # Human approval interrupts - will resume when approved
+    # After human_approval, always go to check_approval_status
+    workflow.add_edge("human_approval", "check_approval_status")
+    
+    # After check_approval_status, route based on approval status
+    def route_after_approval_check(state: AgentState) -> Literal["execute_write_action", "format_final_response"]:
+        """Route after checking approval status."""
+        approval_status = state.get("approval_status")
+        logger.debug(f"ROUTING: route_after_approval_check - approval_status: {approval_status}")
+        
+        if approval_status == ApprovalStatus.APPROVED:
+            logger.info("ROUTING: -> execute_write_action (approved)")
+            return "execute_write_action"
+        else:  # REJECTED
+            logger.info("ROUTING: -> format_final_response (rejected)")
+            return "format_final_response"
+    
     workflow.add_conditional_edges(
-        "human_approval",
-        should_require_approval,
+        "check_approval_status",
+        route_after_approval_check,
         {
-            "human_approval": "human_approval",  # Add this for re-routing
             "execute_write_action": "execute_write_action",
             "format_final_response": "format_final_response",
         }
@@ -237,7 +246,7 @@ def build_agent_graph(approval_service, checkpointer=None):
     
     app = workflow.compile(
         checkpointer=checkpointer,
-        interrupt_after=["human_approval"],  # Interrupt after human approval
+        interrupt_before=["check_approval_status"],  # Interrupt before checking approval status
     )
     
     logger.info("Agent graph built successfully")

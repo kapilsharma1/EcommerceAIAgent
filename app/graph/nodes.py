@@ -367,14 +367,17 @@ def output_guardrails(state: AgentState) -> Dict[str, Any]:
 @traceable(name="human_approval")
 async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
     """
-    Create approval request and interrupt for human approval.
+    Create approval request for human approval.
+    
+    This node only creates the approval if it doesn't exist.
+    Status checking and interrupt logic is handled by check_approval_status node.
     
     Args:
         state: Current agent state
         approval_service: Approval service instance
         
     Returns:
-        Updated state with approval_id and current approval_status
+        Updated state with approval_id (approval_status will be set by check_approval_status)
     """
     logger.info(">>> NODE: human_approval - START")
     logger.info(f"Input state - agent_decision: {'present' if state.get('agent_decision') else 'None'}")
@@ -403,25 +406,15 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
         logger.info(">>> NODE: human_approval - END")
         return {}
     
-    # Check if approval already exists (from a previous run before interrupt)
+    # Check if approval already exists (from a previous run)
     approval_id = state.get("approval_id")
     if approval_id:
-        logger.info(f"Approval already exists: {approval_id}, fetching current status...")
-        # Approval was created before interrupt, fetch current status
-        try:
-            approval = await approval_service.get_approval(approval_id)
-            if approval:
-                logger.info(f"Approval status: {approval.status}")
-                result = {
-                    "approval_id": approval.approval_id,
-                    "approval_status": approval.status,
-                }
-                logger.info(">>> NODE: human_approval - END")
-                return result
-            else:
-                logger.warning(f"Approval {approval_id} not found")
-        except Exception as e:
-            logger.error(f"Error fetching approval: {str(e)}", exc_info=True)
+        logger.info(f"Approval already exists: {approval_id}, skipping creation")
+        logger.info(">>> NODE: human_approval - END")
+        # Return existing approval_id - check_approval_status will fetch current status
+        return {
+            "approval_id": approval_id,
+        }
     
     # Create new approval request
     logger.info(f"Creating new approval request - order_id: {decision.order_id}, action: {decision.action}")
@@ -452,17 +445,80 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
         logger.warning(f"State keys available: {list(state.keys())}")
         logger.warning("This will prevent graph resumption after approval!")
     
-    # Return approval info (status will be PENDING for new approvals)
+    # Return approval_id (status will be checked by check_approval_status node)
     result = {
         "approval_id": approval.approval_id,
-        "approval_status": approval.status,
     }
     
     logger.info(f"Output state - approval_id: {approval.approval_id}")
-    logger.info(f"Output state - approval_status: {approval.status}")
     logger.info(">>> NODE: human_approval - END")
     
     return result
+
+
+@traceable(name="check_approval_status")
+async def check_approval_status(state: AgentState, approval_service) -> Dict[str, Any]:
+    """
+    Check current approval status and update state.
+    
+    This node validates the approval status after human_approval node.
+    If status is PENDING, it raises an interrupt to wait for approval.
+    If APPROVED, it allows execution to proceed.
+    If REJECTED, it routes to final response.
+    
+    Args:
+        state: Current agent state
+        approval_service: Approval service instance
+        
+    Returns:
+        Updated state with current approval_status
+    """
+    from langgraph import Interrupt
+    from app.models.domain import ApprovalStatus
+    
+    logger.info(">>> NODE: check_approval_status - START")
+    logger.info(f"Input state - approval_id: {state.get('approval_id')}")
+    logger.info(f"Input state - approval_status: {state.get('approval_status')}")
+    
+    approval_id = state.get("approval_id")
+    if not approval_id:
+        logger.warning("No approval_id in state, cannot check approval status")
+        logger.info(">>> NODE: check_approval_status - END")
+        return {}
+    
+    # Fetch current approval status from database
+    logger.info(f"Fetching approval status for approval_id: {approval_id}")
+    try:
+        approval = await approval_service.get_approval(approval_id)
+        if not approval:
+            logger.error(f"Approval {approval_id} not found in database")
+            logger.info(">>> NODE: check_approval_status - END")
+            return {}
+        
+        logger.info(f"Approval status retrieved: {approval.status}")
+        
+        result = {
+            "approval_status": approval.status,
+        }
+        
+        # If still PENDING, interrupt again to wait for approval
+        if approval.status == ApprovalStatus.PENDING:
+            logger.info("Approval status is PENDING, raising interrupt to wait for approval...")
+            logger.info(">>> NODE: check_approval_status - END (interrupting)")
+            raise Interrupt()
+        
+        # If APPROVED or REJECTED, return status for routing
+        logger.info(f"Approval status is {approval.status}, proceeding with routing")
+        logger.info(">>> NODE: check_approval_status - END")
+        return result
+        
+    except Interrupt:
+        # Re-raise interrupt
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching approval status: {str(e)}", exc_info=True)
+        logger.info(">>> NODE: check_approval_status - END")
+        return {}
 
 
 @traceable(name="execute_write_action")
