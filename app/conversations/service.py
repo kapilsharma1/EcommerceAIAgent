@@ -109,3 +109,18 @@ class ConversationService:
             True if deleted, False if not found
         """
         return await self.repository.delete_conversation(conversation_id)
+    
+    async def delete_all_conversations(self) -> int:
+        """
+        Delete all conversations from database.
+        
+        TEMPORARY FIX: Used to clear conversations on startup for MemorySaver sync.
+        
+        MIGRATION TO POSTGRESSAVER:
+        - This method should be REMOVED when migrating to PostgresSaver
+        - No longer needed once checkpoints are persisted in PostgreSQL
+        
+        Returns:
+            Number of conversations deleted
+        """
+        return await self.repository.delete_all_conversations()

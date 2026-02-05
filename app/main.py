@@ -124,6 +124,79 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Database initialization warning: {e}", exc_info=True)
     
+    # ============================================================================
+    # TEMPORARY FIX: Clear conversations table on startup
+    # ============================================================================
+    # This ensures the conversations table is in sync with MemorySaver, which
+    # starts empty on each app restart. This prevents orphaned conversations
+    # (conversations in DB but no history in MemorySaver).
+    #
+    # MIGRATION TO POSTGRESSAVER - REMOVE THIS ENTIRE BLOCK:
+    # ----------------------------------------------------------------------------
+    # When migrating to PostgresSaver, you should:
+    #
+    # 1. REMOVE this entire block (lines below until "# End temporary fix")
+    #
+    # 2. UPDATE app/api/routes.py:
+    #    - Replace `from langgraph.checkpoint.memory import MemorySaver` 
+    #      with `from langgraph.checkpoint.postgres import PostgresSaver`
+    #    - Replace `_shared_checkpointer = MemorySaver()` 
+    #      with PostgresSaver initialization using your database connection
+    #    - Update checkpointer initialization to use PostgresSaver.from_conn_string()
+    #
+    # 3. UPDATE app/graph/graph.py:
+    #    - Remove `from langgraph.checkpoint.memory import MemorySaver`
+    #    - Update build_agent_graph() to require checkpointer parameter (no default)
+    #    - Remove the fallback to MemorySaver() if checkpointer is None
+    #
+    # 4. UPDATE requirements.txt:
+    #    - Add: psycopg2-binary>=2.9.0 (or psycopg[binary] for psycopg3)
+    #
+    # 5. UPDATE app/main.py (this file):
+    #    - Add PostgresSaver table initialization in startup:
+    #      ```python
+    #      from langgraph.checkpoint.postgres import PostgresSaver
+    #      from app.config import settings
+    #      
+    #      # Initialize PostgresSaver tables
+    #      db_url = settings.get_database_url
+    #      sync_db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    #      checkpointer = PostgresSaver.from_conn_string(sync_db_url)
+    #      await checkpointer.setup()  # Creates checkpoint tables
+    #      ```
+    #
+    # 6. UPDATE app/api/routes.py delete_conversation endpoint:
+    #    - Add logic to also delete checkpoints from PostgresSaver when deleting a conversation
+    #    - PostgresSaver may have methods to delete checkpoints by thread_id
+    #
+    # 7. REMOVE app/conversations/repository.py:
+    #    - Remove delete_all_conversations() method
+    #
+    # 8. REMOVE app/conversations/service.py:
+    #    - Remove delete_all_conversations() method
+    #
+    # After migration, conversations and checkpoints will both persist in PostgreSQL,
+    # so no need to clear on startup. Everything will survive app restarts.
+    # ============================================================================
+    try:
+        logger.info("Clearing conversations table (temporary fix for MemorySaver sync)...")
+        from app.conversations.service import ConversationService
+        
+        async with AsyncSessionLocal() as session:
+            conversation_service = ConversationService(session)
+            deleted_count = await conversation_service.delete_all_conversations()
+            logger.info(f"Cleared {deleted_count} conversations from database")
+            logger.warning("=" * 80)
+            logger.warning("TEMPORARY FIX ACTIVE: Conversations cleared on startup")
+            logger.warning("This ensures sync with MemorySaver (which is empty on restart)")
+            logger.warning("REMOVE THIS BLOCK when migrating to PostgresSaver")
+            logger.warning("=" * 80)
+    except Exception as e:
+        logger.warning(f"Could not clear conversations on startup: {e}", exc_info=True)
+        # Don't fail startup if this fails
+    # End temporary fix
+    # ============================================================================
+    
     # Seed orders
     try:
         await seed_orders()

@@ -176,6 +176,26 @@ class ConversationRepository:
         
         return result.rowcount > 0
     
+    async def delete_all_conversations(self) -> int:
+        """
+        Delete all conversations from database.
+        
+        TEMPORARY FIX: This method is used to clear conversations on startup
+        to keep the conversations table in sync with MemorySaver (which is empty on startup).
+        
+        MIGRATION TO POSTGRESSAVER:
+        - This method and its usage in main.py should be REMOVED when migrating to PostgresSaver
+        - PostgresSaver will persist checkpoints in PostgreSQL, so conversations will persist across restarts
+        - No need to clear conversations table on startup once using PostgresSaver
+        
+        Returns:
+            Number of conversations deleted
+        """
+        result = await self.session.execute(delete(ConversationDB))
+        await self.session.commit()
+        deleted_count = result.rowcount
+        return deleted_count
+    
     def _db_to_domain(self, conversation_db: ConversationDB) -> Conversation:
         """Convert database model to domain model."""
         return Conversation(
