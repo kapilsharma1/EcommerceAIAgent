@@ -14,9 +14,12 @@ from app.api.schemas import (
     ConversationHistoryItem,
     ConversationListResponse,
     ConversationListItem,
+    DelayedOrderResponse,
+    OrderListResponse,
+    OrderListItem,
 )
 from app.api.approval_mapping import approval_to_conversation
-from app.models.database import get_db
+from app.models.database import get_db, AsyncSessionLocal
 from app.approvals.service import ApprovalService
 from app.conversations.service import ConversationService
 from app.graph.graph import build_agent_graph
@@ -573,4 +576,147 @@ async def delete_conversation(
         logger.error("Full exception:", exc_info=True)
         logger.error("=" * 80)
         raise HTTPException(status_code=500, detail=f"Error deleting conversation: {str(e)}")
+
+
+@router.post("/orders/create-delayed", response_model=DelayedOrderResponse)
+async def create_delayed_order(
+    db: AsyncSession = Depends(get_db),
+) -> DelayedOrderResponse:
+    """
+    Create a mock delayed order in the database.
+    
+    A delayed order is one where the expected_delivery_date is in the past,
+    making it eligible for delayed order policies.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        Delayed order creation response with order_id
+    """
+    logger.info("=" * 80)
+    logger.info("CREATE DELAYED ORDER API REQUEST RECEIVED")
+    logger.info("=" * 80)
+    
+    try:
+        from datetime import date, timedelta
+        import uuid
+        from app.models.domain import Order, OrderStatus
+        from app.actions.order_repository import OrderRepository
+        
+        # Generate a unique order ID
+        order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+        
+        # Create a delayed order (expected_delivery_date is 10 days ago)
+        delayed_order = Order(
+            order_id=order_id,
+            status=OrderStatus.PLACED,  # Order is placed but not delivered
+            expected_delivery_date=date.today() - timedelta(days=10),  # 10 days delayed
+            amount=199.99,
+            refundable=True,
+        )
+        
+        # Create order in database using the provided session
+        repository = OrderRepository(db)
+        
+        # Check if order already exists (unlikely but safe)
+        exists = await repository.order_exists(order_id)
+        if exists:
+            # If exists, generate a new ID
+            order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+            delayed_order.order_id = order_id
+        
+        # Create the order
+        created_order = await repository.create_order(delayed_order)
+        logger.info(f"Delayed order created successfully - order_id: {created_order.order_id}")
+        
+        logger.info("=" * 80)
+        logger.info("CREATE DELAYED ORDER API RESPONSE")
+        logger.info(f"Order ID: {order_id}")
+        logger.info("=" * 80)
+        
+        return DelayedOrderResponse(
+            order_id=order_id,
+            message=f"Mock delayed order created successfully. Order ID: {order_id}",
+        )
+        
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("ERROR IN CREATE DELAYED ORDER API")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error("Full exception:", exc_info=True)
+        logger.error("=" * 80)
+        raise HTTPException(status_code=500, detail=f"Error creating delayed order: {str(e)}")
+
+
+@router.get("/orders", response_model=OrderListResponse)
+async def list_orders(
+    db: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
+) -> OrderListResponse:
+    """
+    Get list of all orders.
+    
+    Args:
+        db: Database session
+        limit: Maximum number of orders to return (default: 100)
+        offset: Number of orders to skip (default: 0)
+        
+    Returns:
+        Order list response
+    """
+    logger.info("=" * 80)
+    logger.info("ORDER LIST API REQUEST RECEIVED")
+    logger.info(f"Limit: {limit}, Offset: {offset}")
+    logger.info("=" * 80)
+    
+    try:
+        from sqlalchemy import func, select, desc
+        from app.models.database import OrderDB
+        
+        # Get total count for pagination
+        count_stmt = select(func.count(OrderDB.order_id))
+        count_result = await db.execute(count_stmt)
+        total = count_result.scalar() or 0
+        
+        # Fetch orders with timestamps from database
+        stmt = (
+            select(OrderDB)
+            .order_by(desc(OrderDB.created_at))
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await db.execute(stmt)
+        orders_db = result.scalars().all()
+        
+        # Convert to response format
+        order_items = [
+            OrderListItem(
+                order_id=order_db.order_id,
+                status=order_db.status.value,
+                expected_delivery_date=order_db.expected_delivery_date.isoformat(),
+                amount=order_db.amount,
+                refundable=order_db.refundable,
+                description=order_db.description,
+                created_at=order_db.created_at.isoformat(),
+                updated_at=order_db.updated_at.isoformat(),
+            )
+            for order_db in orders_db
+        ]
+        
+        logger.info(f"Returning {len(order_items)} orders (total: {total})")
+        logger.info("=" * 80)
+        
+        return OrderListResponse(orders=order_items, total=total)
+        
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("ERROR IN ORDER LIST API")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error("Full exception:", exc_info=True)
+        logger.error("=" * 80)
+        raise HTTPException(status_code=500, detail=f"Error fetching order list: {str(e)}")
 

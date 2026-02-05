@@ -7,7 +7,7 @@ from app.graph.state import AgentState
 from app.llm.client import LLMClient, normalize_llm_response_dict
 from app.rag.chroma_client import ChromaClient
 from app.guardrails.validator import GuardrailsValidator
-from app.actions.mock_order_service import mock_order_service
+from app.actions.db_order_service import db_order_service
 from app.models.domain import NextStep, ActionType
 
 logger = logging.getLogger(__name__)
@@ -103,10 +103,8 @@ async def fetch_order_data(state: AgentState) -> Dict[str, Any]:
     if order_id:
         logger.info(f"Fetching order data for order_id: {order_id}")
         try:
-            repository = mock_order_service.order_repository
-            
             # First try exact match
-            order_data = await repository.get_order(order_id)
+            order_data = await db_order_service.get_order(order_id)
             
             # If not found and order_id looks like a numeric ID, try to find matching order
             if not order_data and order_id.isdigit():
@@ -114,7 +112,7 @@ async def fetch_order_data(state: AgentState) -> Dict[str, Any]:
                 # Try different formats
                 for fmt_id in [f"ORD-{order_id.zfill(3)}", f"ORD-{order_id}"]:
                     logger.debug(f"Trying format: {fmt_id}")
-                    order_data = await repository.get_order(fmt_id)
+                    order_data = await db_order_service.get_order(fmt_id)
                     if order_data:
                         logger.info(f"Found order with format conversion: {fmt_id}")
                         break
@@ -127,7 +125,7 @@ async def fetch_order_data(state: AgentState) -> Dict[str, Any]:
                 for avail_id in available_orders:
                     if numeric_part in avail_id or avail_id.endswith(numeric_part):
                         logger.info(f"Trying fuzzy match: {avail_id}")
-                        order_data = await repository.get_order(avail_id)
+                        order_data = await db_order_service.get_order(avail_id)
                         if order_data:
                             logger.info(f"Found order with fuzzy match: {avail_id}")
                             break
@@ -556,7 +554,7 @@ async def execute_write_action(state: AgentState) -> Dict[str, Any]:
     # Execute action
     logger.info(f"Executing action: {decision.action} for order: {decision.order_id}")
     try:
-        result = await mock_order_service.execute_action(
+        result = await db_order_service.execute_action(
             action=decision.action,
             order_id=decision.order_id,
         )

@@ -42,6 +42,7 @@ class Order(BaseModel):
     expected_delivery_date: date = Field(..., description="Expected delivery date")
     amount: float = Field(..., gt=0, description="Order amount")
     refundable: bool = Field(..., description="Whether order is refundable")
+    description: Optional[str] = Field(None, description="Order description")
     
     model_config = {
         "extra": "forbid",

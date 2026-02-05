@@ -1,10 +1,10 @@
 """SQLAlchemy database models."""
-from datetime import datetime
-from sqlalchemy import String, DateTime, Enum as SQLEnum, Text
+from datetime import datetime, date
+from sqlalchemy import String, DateTime, Enum as SQLEnum, Text, Date, Float, Boolean
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.config import settings
-from app.models.domain import ApprovalStatus
+from app.models.domain import ApprovalStatus, OrderStatus
 
 
 class Base(DeclarativeBase):
@@ -57,6 +57,34 @@ class ConversationDB(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
         index=True
+    )
+
+
+class OrderDB(Base):
+    """Order database model."""
+    __tablename__ = "orders"
+    
+    order_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    status: Mapped[OrderStatus] = mapped_column(
+        SQLEnum(OrderStatus),
+        nullable=False,
+        index=True
+    )
+    expected_delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    refundable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
     )
 
 
