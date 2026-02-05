@@ -1,6 +1,6 @@
 """SQLAlchemy database models."""
 from datetime import datetime
-from sqlalchemy import String, DateTime, Enum as SQLEnum
+from sqlalchemy import String, DateTime, Enum as SQLEnum, Text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.config import settings
@@ -35,6 +35,28 @@ class ApprovalDB(Base):
         nullable=False,
         default=datetime.utcnow,
         onupdate=datetime.utcnow
+    )
+
+
+class ConversationDB(Base):
+    """Conversation database model."""
+    __tablename__ = "conversations"
+    
+    conversation_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    last_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True
     )
 
 

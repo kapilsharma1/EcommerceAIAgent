@@ -5,10 +5,20 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from langgraph.checkpoint.memory import MemorySaver
-from app.api.schemas import ChatRequest, ChatResponse, ApprovalRequest, ApprovalResponse
+from app.api.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ApprovalRequest,
+    ApprovalResponse,
+    ConversationHistoryResponse,
+    ConversationHistoryItem,
+    ConversationListResponse,
+    ConversationListItem,
+)
 from app.api.approval_mapping import approval_to_conversation
 from app.models.database import get_db
 from app.approvals.service import ApprovalService
+from app.conversations.service import ConversationService
 from app.graph.graph import build_agent_graph
 from app.graph.state import AgentState
 
@@ -183,6 +193,25 @@ async def chat(
         if not final_response or final_response == "I apologize, but I couldn't process your request.":
             logger.warning("Final response is empty or default fallback!")
             logger.warning(f"Full result state: {result}")
+        
+        # Register or update conversation in database
+        try:
+            conversation_service = ConversationService(db)
+            # Use first message as title if it's a new conversation
+            title = None
+            if len(conversation_history) == 0:
+                title = request.message[:50]  # Use first 50 chars as title
+            
+            # Update conversation with last message
+            await conversation_service.get_or_create_conversation(
+                conversation_id=conversation_id,
+                title=title,
+                last_message=request.message[:500],  # Truncate to 500 chars
+            )
+            logger.info(f"Conversation {conversation_id} registered/updated in database")
+        except Exception as e:
+            logger.warning(f"Failed to register conversation: {str(e)}")
+            # Don't fail the request if conversation registration fails
         
         response = ChatResponse(
             response=final_response,
@@ -382,4 +411,166 @@ async def approve_action(
         logger.error("Full exception:", exc_info=True)
         logger.error("=" * 80)
         raise HTTPException(status_code=500, detail=f"Error processing approval: {str(e)}")
+
+
+@router.get("/conversations/{conversation_id}/history", response_model=ConversationHistoryResponse)
+async def get_conversation_history(
+    conversation_id: str,
+) -> ConversationHistoryResponse:
+    """
+    Get conversation history for a given conversation ID.
+    
+    Args:
+        conversation_id: Conversation ID (thread_id)
+        
+    Returns:
+        Conversation history response
+    """
+    logger.info("=" * 80)
+    logger.info("CONVERSATION HISTORY API REQUEST RECEIVED")
+    logger.info(f"Conversation ID: {conversation_id}")
+    logger.info("=" * 80)
+    
+    try:
+        # Create config for checkpointing
+        config = {"configurable": {"thread_id": conversation_id}}
+        
+        # Try to get the latest checkpoint state for this thread_id
+        conversation_history = []
+        
+        try:
+            from langgraph.checkpoint.base import Checkpoint
+            checkpoint_list = _shared_checkpointer.list(config, limit=1)
+            if checkpoint_list:
+                checkpoint_id = checkpoint_list[0].get("checkpoint_id")
+                if checkpoint_id:
+                    checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
+                    if checkpoint_data and checkpoint_data.get("channel_values"):
+                        previous_state = checkpoint_data["channel_values"]
+                        conversation_history = previous_state.get("conversation_history", [])
+                        logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
+        except Exception as e:
+            logger.warning(f"Could not load conversation history from checkpoint: {str(e)}")
+            conversation_history = []
+        
+        # Convert conversation history to response format
+        history_items = [
+            ConversationHistoryItem(role=msg.get("role", "unknown"), content=msg.get("content", ""))
+            for msg in conversation_history
+        ]
+        
+        logger.info(f"Returning {len(history_items)} messages for conversation {conversation_id}")
+        logger.info("=" * 80)
+        
+        return ConversationHistoryResponse(
+            conversation_id=conversation_id,
+            messages=history_items,
+        )
+        
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("ERROR IN CONVERSATION HISTORY API")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error("Full exception:", exc_info=True)
+        logger.error("=" * 80)
+        raise HTTPException(status_code=500, detail=f"Error fetching conversation history: {str(e)}")
+
+
+@router.get("/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    db: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
+) -> ConversationListResponse:
+    """
+    Get list of all conversations.
+    
+    Args:
+        db: Database session
+        limit: Maximum number of conversations to return (default: 100)
+        offset: Number of conversations to skip (default: 0)
+        
+    Returns:
+        Conversation list response
+    """
+    logger.info("=" * 80)
+    logger.info("CONVERSATION LIST API REQUEST RECEIVED")
+    logger.info(f"Limit: {limit}, Offset: {offset}")
+    logger.info("=" * 80)
+    
+    try:
+        conversation_service = ConversationService(db)
+        conversations = await conversation_service.list_conversations(limit=limit, offset=offset)
+        
+        # Convert to response format
+        conversation_items = [
+            ConversationListItem(
+                conversation_id=conv.conversation_id,
+                title=conv.title,
+                last_message=conv.last_message,
+                created_at=conv.created_at.isoformat(),
+                updated_at=conv.updated_at.isoformat(),
+            )
+            for conv in conversations
+        ]
+        
+        logger.info(f"Returning {len(conversation_items)} conversations")
+        logger.info("=" * 80)
+        
+        return ConversationListResponse(conversations=conversation_items)
+        
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("ERROR IN CONVERSATION LIST API")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error("Full exception:", exc_info=True)
+        logger.error("=" * 80)
+        raise HTTPException(status_code=500, detail=f"Error fetching conversation list: {str(e)}")
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a conversation.
+    
+    Args:
+        conversation_id: Conversation ID
+        db: Database session
+        
+    Returns:
+        Success message
+    """
+    logger.info("=" * 80)
+    logger.info("DELETE CONVERSATION API REQUEST RECEIVED")
+    logger.info(f"Conversation ID: {conversation_id}")
+    logger.info("=" * 80)
+    
+    try:
+        conversation_service = ConversationService(db)
+        deleted = await conversation_service.delete_conversation(conversation_id)
+        
+        if not deleted:
+            logger.warning(f"Conversation {conversation_id} not found")
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        
+        logger.info(f"Conversation {conversation_id} deleted successfully")
+        logger.info("=" * 80)
+        
+        return {"message": "Conversation deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("ERROR IN DELETE CONVERSATION API")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error("Full exception:", exc_info=True)
+        logger.error("=" * 80)
+        raise HTTPException(status_code=500, detail=f"Error deleting conversation: {str(e)}")
 

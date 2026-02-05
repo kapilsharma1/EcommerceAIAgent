@@ -8,10 +8,12 @@ from app.models.domain import (
     ApprovalStatus,
     LLMResponse,
     NextStep,
+    Conversation,
 )
 from app.models.database import (
     Base,
     ApprovalDB,
+    ConversationDB,
     get_db,
     init_db,
     AsyncSessionLocal,
@@ -26,8 +28,10 @@ __all__ = [
     "ApprovalStatus",
     "LLMResponse",
     "NextStep",
+    "Conversation",
     "Base",
     "ApprovalDB",
+    "ConversationDB",
     "get_db",
     "init_db",
     "AsyncSessionLocal",
