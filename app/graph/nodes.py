@@ -473,7 +473,7 @@ async def check_approval_status(state: AgentState, approval_service) -> Dict[str
     Returns:
         Updated state with current approval_status
     """
-    from langgraph import Interrupt
+    # from langgraph import Interrupt
     from app.models.domain import ApprovalStatus
     
     logger.info(">>> NODE: check_approval_status - START")
@@ -502,19 +502,20 @@ async def check_approval_status(state: AgentState, approval_service) -> Dict[str
         }
         
         # If still PENDING, interrupt again to wait for approval
+        # TEMPORARILY COMMENTED - interrupt logic
         if approval.status == ApprovalStatus.PENDING:
             logger.info("Approval status is PENDING, raising interrupt to wait for approval...")
             logger.info(">>> NODE: check_approval_status - END (interrupting)")
-            raise Interrupt()
+            # raise Interrupt()
         
         # If APPROVED or REJECTED, return status for routing
         logger.info(f"Approval status is {approval.status}, proceeding with routing")
         logger.info(">>> NODE: check_approval_status - END")
         return result
         
-    except Interrupt:
-        # Re-raise interrupt
-        raise
+    # except Interrupt:
+    #     # Re-raise interrupt
+    #     raise
     except Exception as e:
         logger.error(f"Error fetching approval status: {str(e)}", exc_info=True)
         logger.info(">>> NODE: check_approval_status - END")

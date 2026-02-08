@@ -348,13 +348,13 @@ async def approve_action(
                 f"Action {approval.action} for order {approval.order_id} has been {status.value.lower()}."
             )
             
+            # Only add execution result message, not the LLM's final_answer (which contains apology text)
             if execution_result and execution_result.get("success"):
+                # Use only the execution result message, not the full final_response
                 message += f" {execution_result.get('message', 'Action executed successfully.')}"
             elif execution_result and not execution_result.get("success"):
+                # If execution failed, add error
                 message += f" Note: {execution_result.get('error', 'Action execution failed.')}"
-            
-            if final_response:
-                message += f" Agent response: {final_response}"
         else:
             logger.warning("Result is None - graph may not have resumed properly")
             message = (
