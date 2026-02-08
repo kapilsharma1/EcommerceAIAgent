@@ -9,7 +9,7 @@ from alembic import context
 
 # Import your models and Base
 from app.models.database import Base
-from app.models.domain import ApprovalStatus  # Import enums to register them
+from app.models.domain import ApprovalStatus, OrderStatus  # Import enums to register them
 from app.config import settings
 
 # this is the Alembic Config object, which provides

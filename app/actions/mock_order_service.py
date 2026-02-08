@@ -20,6 +20,7 @@ class MockOrderRepository:
                 expected_delivery_date=date.today() + timedelta(days=5),
                 amount=99.99,
                 refundable=True,
+                description="Wireless Bluetooth headphones with noise cancellation",
             ),
             "ORD-002": Order(
                 order_id="ORD-002",
@@ -27,6 +28,7 @@ class MockOrderRepository:
                 expected_delivery_date=date.today() + timedelta(days=2),
                 amount=149.50,
                 refundable=True,
+                description="Smart fitness tracker with heart rate monitor",
             ),
             "ORD-003": Order(
                 order_id="ORD-003",
@@ -34,6 +36,7 @@ class MockOrderRepository:
                 expected_delivery_date=date.today() - timedelta(days=3),
                 amount=79.99,
                 refundable=True,
+                description="Portable phone charger with fast charging support",
             ),
             "ORD-004": Order(
                 order_id="ORD-004",
@@ -41,6 +44,7 @@ class MockOrderRepository:
                 expected_delivery_date=date.today() + timedelta(days=7),
                 amount=199.99,
                 refundable=False,
+                description="Premium leather wallet with RFID blocking",
             ),
             "ORD-005": Order(
                 order_id="ORD-005",
@@ -48,6 +52,7 @@ class MockOrderRepository:
                 expected_delivery_date=date.today() - timedelta(days=10),  # Delayed
                 amount=299.99,
                 refundable=True,
+                description="4K Ultra HD streaming device with voice remote",
             ),
         }
     
@@ -79,6 +84,7 @@ class MockOrderRepository:
             expected_delivery_date=order.expected_delivery_date,
             amount=order.amount,
             refundable=order.refundable,
+            description=order.description,
         )
         self.orders[order_id] = updated_order
         return updated_order

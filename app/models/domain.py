@@ -42,6 +42,7 @@ class Order(BaseModel):
     expected_delivery_date: date = Field(..., description="Expected delivery date")
     amount: float = Field(..., gt=0, description="Order amount")
     refundable: bool = Field(..., description="Whether order is refundable")
+    description: Optional[str] = Field(None, description="Order description")
     
     model_config = {
         "extra": "forbid",
@@ -117,3 +118,13 @@ class LLMResponse(BaseModel):
     
     model_config = {"extra": "forbid", "strict": True}
 
+
+class Conversation(BaseModel):
+    """Conversation domain model."""
+    conversation_id: str = Field(..., description="Unique conversation identifier")
+    title: str = Field(..., description="Conversation title")
+    last_message: Optional[str] = Field(None, description="Last message preview")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    
+    model_config = {"extra": "forbid", "strict": True}
