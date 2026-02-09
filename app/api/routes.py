@@ -88,9 +88,10 @@ async def chat(
         try:
             # Try to get the latest checkpoint state for this thread_id
             from langgraph.checkpoint.base import Checkpoint
-            checkpoint_list = _shared_checkpointer.list(config, limit=1)
+            checkpoint_list = list(_shared_checkpointer.list(config, limit=1))
             if checkpoint_list:
-                checkpoint_id = checkpoint_list[0].get("checkpoint_id")
+                checkpoint_tuple = checkpoint_list[0]
+                checkpoint_id = checkpoint_tuple.checkpoint_id if hasattr(checkpoint_tuple, 'checkpoint_id') else None
                 if checkpoint_id:
                     checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
                     if checkpoint_data and checkpoint_data.get("channel_values"):
@@ -443,9 +444,10 @@ async def get_conversation_history(
         
         try:
             from langgraph.checkpoint.base import Checkpoint
-            checkpoint_list = _shared_checkpointer.list(config, limit=1)
+            checkpoint_list = list(_shared_checkpointer.list(config, limit=1))
             if checkpoint_list:
-                checkpoint_id = checkpoint_list[0].get("checkpoint_id")
+                checkpoint_tuple = checkpoint_list[0]
+                checkpoint_id = checkpoint_tuple.checkpoint_id if hasattr(checkpoint_tuple, 'checkpoint_id') else None
                 if checkpoint_id:
                     checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
                     if checkpoint_data and checkpoint_data.get("channel_values"):
