@@ -443,18 +443,65 @@ async def get_conversation_history(
         conversation_history = []
         
         try:
+            logger.info(f"[DEBUG] Starting checkpoint retrieval for conversation_id: {conversation_id}")
+            logger.info(f"[DEBUG] Config being used: {config}")
+            logger.info(f"[DEBUG] Checkpointer type: {type(_shared_checkpointer)}")
+            logger.info(f"[DEBUG] Checkpointer instance: {_shared_checkpointer}")
+            
             from langgraph.checkpoint.base import Checkpoint
+            logger.info(f"[DEBUG] Calling _shared_checkpointer.list(config, limit=1)...")
             checkpoint_list = list(_shared_checkpointer.list(config, limit=1))
+            logger.info(f"[DEBUG] checkpoint_list result: {checkpoint_list}")
+            logger.info(f"[DEBUG] checkpoint_list type: {type(checkpoint_list)}")
+            logger.info(f"[DEBUG] checkpoint_list length: {len(checkpoint_list)}")
+            
             if checkpoint_list:
+                logger.info(f"[DEBUG] checkpoint_list is not empty, processing first item...")
                 checkpoint_tuple = checkpoint_list[0]
-                checkpoint_id = checkpoint_tuple.checkpoint_id if hasattr(checkpoint_tuple, 'checkpoint_id') else None
-                if checkpoint_id:
-                    checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
-                    if checkpoint_data and checkpoint_data.get("channel_values"):
+                logger.info(f"[DEBUG] checkpoint_tuple: {checkpoint_tuple}")
+                logger.info(f"[DEBUG] checkpoint_tuple type: {type(checkpoint_tuple)}")
+                logger.info(f"[DEBUG] checkpoint_tuple attributes: {dir(checkpoint_tuple)}")
+                
+                # The checkpoint data is already in checkpoint_tuple.checkpoint
+                logger.info(f"[DEBUG] Accessing checkpoint_tuple.checkpoint directly...")
+                checkpoint_data = checkpoint_tuple.checkpoint
+                logger.info(f"[DEBUG] checkpoint_data retrieved: {checkpoint_data}")
+                logger.info(f"[DEBUG] checkpoint_data type: {type(checkpoint_data)}")
+                logger.info(f"[DEBUG] checkpoint_data is None: {checkpoint_data is None}")
+                
+                if checkpoint_data:
+                    logger.info(f"[DEBUG] checkpoint_data exists, checking for 'channel_values' key...")
+                    logger.info(f"[DEBUG] checkpoint_data keys: {checkpoint_data.keys() if isinstance(checkpoint_data, dict) else 'Not a dict'}")
+                    logger.info(f"[DEBUG] 'channel_values' in checkpoint_data: {'channel_values' in checkpoint_data if isinstance(checkpoint_data, dict) else 'N/A'}")
+                    logger.info(f"[DEBUG] checkpoint_data.get('channel_values'): {checkpoint_data.get('channel_values') if isinstance(checkpoint_data, dict) else 'N/A'}")
+                    
+                    if checkpoint_data.get("channel_values"):
+                        logger.info(f"[DEBUG] channel_values found, extracting previous_state...")
                         previous_state = checkpoint_data["channel_values"]
+                        logger.info(f"[DEBUG] previous_state: {previous_state}")
+                        logger.info(f"[DEBUG] previous_state type: {type(previous_state)}")
+                        logger.info(f"[DEBUG] previous_state keys: {previous_state.keys() if isinstance(previous_state, dict) else 'Not a dict'}")
+                        
                         conversation_history = previous_state.get("conversation_history", [])
+                        logger.info(f"[DEBUG] conversation_history extracted: {conversation_history}")
+                        logger.info(f"[DEBUG] conversation_history type: {type(conversation_history)}")
+                        logger.info(f"[DEBUG] conversation_history length: {len(conversation_history) if isinstance(conversation_history, list) else 'Not a list'}")
+                        logger.info(f"[DEBUG] conversation_history content: {conversation_history}")
                         logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
+                    else:
+                        logger.warning(f"[DEBUG] checkpoint_data exists but 'channel_values' is missing or None")
+                        logger.warning(f"[DEBUG] Full checkpoint_data structure: {checkpoint_data}")
+                else:
+                    logger.warning(f"[DEBUG] checkpoint_data is None or falsy")
+            else:
+                logger.warning(f"[DEBUG] checkpoint_list is empty - no checkpoints found for conversation_id: {conversation_id}")
+                logger.warning(f"[DEBUG] This might mean no conversation history exists for this conversation_id")
         except Exception as e:
+            logger.error(f"[DEBUG] Exception occurred while loading conversation history from checkpoint")
+            logger.error(f"[DEBUG] Exception type: {type(e).__name__}")
+            logger.error(f"[DEBUG] Exception message: {str(e)}")
+            logger.error(f"[DEBUG] Exception args: {e.args}")
+            logger.error(f"[DEBUG] Full exception traceback:", exc_info=True)
             logger.warning(f"Could not load conversation history from checkpoint: {str(e)}")
             conversation_history = []
         

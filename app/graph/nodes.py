@@ -499,9 +499,38 @@ async def check_approval_status(state: AgentState, approval_service) -> Dict[str
             "approval_status": approval.status,
         }
         
-        # If still PENDING, interrupt again to wait for approval
-        # TEMPORARILY COMMENTED - interrupt logic
+        # If still PENDING, update conversation_history before interrupting
+        # This ensures the conversation is saved even when graph is interrupted
         if approval.status == ApprovalStatus.PENDING:
+            logger.info("Approval status is PENDING, updating conversation_history before interrupt...")
+            
+            # Get current conversation history
+            conversation_history = state.get("conversation_history", [])
+            user_message = state.get("user_message", "")
+            agent_decision_dict = state.get("agent_decision")
+            
+            # Extract response from agent_decision if available
+            response = None
+            if agent_decision_dict and isinstance(agent_decision_dict, dict):
+                response = agent_decision_dict.get("final_answer")
+            
+            # Update conversation_history with user message and assistant response
+            if user_message or response:
+                updated_history = conversation_history.copy()
+                if user_message:
+                    updated_history.append({
+                        "role": "user",
+                        "content": user_message
+                    })
+                if response:
+                    updated_history.append({
+                        "role": "assistant",
+                        "content": response
+                    })
+                
+                result["conversation_history"] = updated_history
+                logger.info(f"Updated conversation_history: {len(updated_history)} messages (added {len(updated_history) - len(conversation_history)} new messages)")
+            
             logger.info("Approval status is PENDING, raising interrupt to wait for approval...")
             logger.info(">>> NODE: check_approval_status - END (interrupting)")
             # raise Interrupt()
