@@ -18,6 +18,58 @@ chroma_client = ChromaClient()
 guardrails_validator = GuardrailsValidator()
 
 
+def _update_conversation_history(state: AgentState) -> Dict[str, Any]:
+    """
+    Helper function to update conversation history with current user message and assistant response.
+    
+    This function checks if the user message is already in history to prevent duplicates,
+    and only updates if we have both user message and a response.
+    
+    Args:
+        state: Current agent state
+        
+    Returns:
+        Dictionary with updated conversation_history, or empty dict if no update needed
+    """
+    conversation_history = state.get("conversation_history", [])
+    user_message = state.get("user_message", "")
+    agent_decision_dict = state.get("agent_decision")
+    
+    # Extract response from agent_decision if available
+    response = None
+    if agent_decision_dict and isinstance(agent_decision_dict, dict):
+        response = agent_decision_dict.get("final_answer")
+    
+    # Only update if we have both user message and response
+    if not (user_message and response):
+        logger.debug("Skipping history update - missing user_message or response")
+        return {}
+    
+    # Check if user message already in history (prevent duplicates on resumption)
+    # Check last few messages to see if this user message is already there
+    if conversation_history:
+        for msg in reversed(conversation_history[-5:]):  # Check last 5 messages
+            if msg.get("role") == "user" and msg.get("content") == user_message:
+                logger.debug("User message already in history, skipping update")
+                return {}
+    
+    # Update conversation_history
+    updated_history = conversation_history.copy()
+    updated_history.append({
+        "role": "user",
+        "content": user_message
+    })
+    updated_history.append({
+        "role": "assistant",
+        "content": response
+    })
+    
+    logger.info(f"Updated conversation_history: {len(updated_history)} messages (added 2 new messages)")
+    return {
+        "conversation_history": updated_history,
+    }
+
+
 @traceable(name="classify_intent")
 def classify_intent(state: AgentState) -> Dict[str, Any]:
     """
@@ -369,23 +421,27 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
     
     This node only creates the approval if it doesn't exist.
     Status checking and interrupt logic is handled by check_approval_status node.
+    Also updates conversation history before returning to ensure it's saved before interrupt.
     
     Args:
         state: Current agent state
         approval_service: Approval service instance
         
     Returns:
-        Updated state with approval_id (approval_status will be set by check_approval_status)
+        Updated state with approval_id and conversation_history (approval_status will be set by check_approval_status)
     """
     logger.info(">>> NODE: human_approval - START")
     logger.info(f"Input state - agent_decision: {'present' if state.get('agent_decision') else 'None'}")
     logger.info(f"Input state - approval_id: {state.get('approval_id')}")
     
+    # Update conversation history first (will be merged with result at the end)
+    history_update = _update_conversation_history(state)
+    
     agent_decision_dict = state.get("agent_decision")
     if not agent_decision_dict:
-        logger.warning("No agent_decision in state, returning empty update")
+        logger.warning("No agent_decision in state, returning history update only")
         logger.info(">>> NODE: human_approval - END")
-        return {}
+        return history_update
     
     from app.models.domain import LLMResponse, ActionType
     # Normalize the dict to ensure proper enum types
@@ -396,23 +452,27 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error parsing agent_decision: {str(e)}", exc_info=True)
         logger.info(">>> NODE: human_approval - END")
-        return {}
+        # Return history update even on error
+        return history_update
     
     # Only create approval if action is not NONE
     if decision.action == ActionType.NONE:
         logger.info("Action is NONE, no approval needed")
         logger.info(">>> NODE: human_approval - END")
-        return {}
+        # Return history update
+        return history_update
     
     # Check if approval already exists (from a previous run)
     approval_id = state.get("approval_id")
     if approval_id:
         logger.info(f"Approval already exists: {approval_id}, skipping creation")
         logger.info(">>> NODE: human_approval - END")
-        # Return existing approval_id - check_approval_status will fetch current status
-        return {
+        # Return existing approval_id with history update
+        result = {
             "approval_id": approval_id,
         }
+        result.update(history_update)
+        return result
     
     # Create new approval request
     logger.info(f"Creating new approval request - order_id: {decision.order_id}, action: {decision.action}")
@@ -443,12 +503,14 @@ async def human_approval(state: AgentState, approval_service) -> Dict[str, Any]:
         logger.warning(f"State keys available: {list(state.keys())}")
         logger.warning("This will prevent graph resumption after approval!")
     
-    # Return approval_id (status will be checked by check_approval_status node)
+    # Return approval_id with history update (history is saved before interrupt)
     result = {
         "approval_id": approval.approval_id,
     }
+    result.update(history_update)
     
     logger.info(f"Output state - approval_id: {approval.approval_id}")
+    logger.info(f"Output state - conversation_history: {'updated' if history_update else 'no update'}")
     logger.info(">>> NODE: human_approval - END")
     
     return result
@@ -499,39 +561,10 @@ async def check_approval_status(state: AgentState, approval_service) -> Dict[str
             "approval_status": approval.status,
         }
         
-        # If still PENDING, update conversation_history before interrupting
-        # This ensures the conversation is saved even when graph is interrupted
+        # Note: Conversation history is now updated in human_approval node before interrupt
+        # This ensures history is saved to checkpoint before the graph is interrupted
         if approval.status == ApprovalStatus.PENDING:
-            logger.info("Approval status is PENDING, updating conversation_history before interrupt...")
-            
-            # Get current conversation history
-            conversation_history = state.get("conversation_history", [])
-            user_message = state.get("user_message", "")
-            agent_decision_dict = state.get("agent_decision")
-            
-            # Extract response from agent_decision if available
-            response = None
-            if agent_decision_dict and isinstance(agent_decision_dict, dict):
-                response = agent_decision_dict.get("final_answer")
-            
-            # Update conversation_history with user message and assistant response
-            if user_message or response:
-                updated_history = conversation_history.copy()
-                if user_message:
-                    updated_history.append({
-                        "role": "user",
-                        "content": user_message
-                    })
-                if response:
-                    updated_history.append({
-                        "role": "assistant",
-                        "content": response
-                    })
-                
-                result["conversation_history"] = updated_history
-                logger.info(f"Updated conversation_history: {len(updated_history)} messages (added {len(updated_history) - len(conversation_history)} new messages)")
-            
-            logger.info("Approval status is PENDING, raising interrupt to wait for approval...")
+            logger.info("Approval status is PENDING, graph will interrupt (history already updated in human_approval)")
             logger.info(">>> NODE: check_approval_status - END (interrupting)")
             # raise Interrupt()
         
@@ -663,30 +696,20 @@ def format_final_response(state: AgentState) -> Dict[str, Any]:
         response += f"\n\nNote: {error}"
         logger.info(f"Added execution error message: {error}")
     
-    # Update conversation_history with this exchange
-    conversation_history = state.get("conversation_history", [])
-    user_message = state.get("user_message", "")
-    
-    # Add user message and assistant response to history
-    updated_history = conversation_history.copy()
-    if user_message:
-        updated_history.append({
-            "role": "user",
-            "content": user_message
-        })
-    updated_history.append({
-        "role": "assistant",
-        "content": response
-    })
+    # Update conversation_history with this exchange (using helper to prevent duplicates)
+    # Note: If history was already updated in human_approval node, this will skip the update
+    # to prevent duplicates. The helper checks if user message already exists in history.
+    history_update = _update_conversation_history(state)
     
     result = {
         "final_response": response,
-        "conversation_history": updated_history,  # Save updated history to checkpoint
     }
+    # Merge history update if any (will be empty dict if already updated)
+    result.update(history_update)
     
     logger.info(f"Output state - final_response length: {len(response)}")
     logger.info(f"Output state - final_response: {response[:200]}..." if len(response) > 200 else f"Output state - final_response: {response}")
-    logger.info(f"Output state - conversation_history: {len(updated_history)} messages (added 2 new messages)")
+    logger.info(f"Output state - conversation_history: {'updated' if history_update else 'no update (already exists)'}")
     logger.info(">>> NODE: format_final_response - END")
     
     return result
