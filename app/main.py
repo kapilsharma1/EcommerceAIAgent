@@ -1,6 +1,7 @@
 """FastAPI main application."""
 import logging
 import sys
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,7 @@ from app.models.domain import Order, OrderStatus
 from app.actions.order_repository import OrderRepository
 from app.observability.tracing import setup_observability
 from app.api.routes import router
+from app.rag.chroma_client import ChromaClient
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +32,55 @@ logging.getLogger("app.rag").setLevel(logging.DEBUG)
 logging.getLogger("app.actions").setLevel(logging.DEBUG)
 
 logger = logging.getLogger(__name__)
+
+
+async def embed_policies():
+    """Embed all policy documents from data/policies into ChromaDB."""
+    logger.info("Embedding policies into ChromaDB...")
+    
+    try:
+        # Initialize ChromaDB client
+        client = ChromaClient()
+        
+        # Get policy directory (relative to project root)
+        project_root = Path(__file__).parent.parent
+        policy_dir = project_root / "data" / "policies"
+        
+        if not policy_dir.exists():
+            logger.warning(f"Policy directory not found: {policy_dir}")
+            return
+        
+        # Read all policy files
+        policies = []
+        for policy_file in policy_dir.glob("*.txt"):
+            logger.info(f"Reading policy file: {policy_file.name}...")
+            with open(policy_file, "r", encoding="utf-8") as f:
+                content = f.read()
+                
+                policies.append({
+                    "id": f"policy-{policy_file.stem}",
+                    "text": content,
+                    "metadata": {
+                        "filename": policy_file.name,
+                        "source": "order-policies",
+                    }
+                })
+        
+        if not policies:
+            logger.warning("No policy files found!")
+            return
+        
+        logger.info(f"Found {len(policies)} policy files")
+        
+        # Embed and upsert to ChromaDB
+        logger.info("Embedding and uploading to ChromaDB...")
+        await client.upsert_policies_batch(policies)
+        logger.info(f"Successfully embedded {len(policies)} policies into ChromaDB!")
+        logger.info(f"Collection: {client.collection_name}")
+        logger.info(f"Storage location: {client.persist_directory}")
+    except Exception as e:
+        logger.error(f"Error embedding policies: {str(e)}", exc_info=True)
+        # Don't raise - allow app to start even if embedding fails
 
 
 async def seed_orders():
@@ -196,6 +247,13 @@ async def lifespan(app: FastAPI):
         # Don't fail startup if this fails
     # End temporary fix
     # ============================================================================
+    
+    # Embed policies
+    try:
+        await embed_policies()
+    except Exception as e:
+        logger.warning(f"Policy embedding warning: {e}", exc_info=True)
+        # Don't fail startup if embedding fails
     
     # Seed orders
     try:

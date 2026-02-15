@@ -87,17 +87,23 @@ async def chat(
         
         try:
             # Try to get the latest checkpoint state for this thread_id
+            # Check multiple checkpoints to find the one with the most complete history
             from langgraph.checkpoint.base import Checkpoint
-            checkpoint_list = list(_shared_checkpointer.list(config, limit=1))
+            checkpoint_list = list(_shared_checkpointer.list(config, limit=10))
             if checkpoint_list:
-                checkpoint_tuple = checkpoint_list[0]
-                checkpoint_id = checkpoint_tuple.checkpoint_id if hasattr(checkpoint_tuple, 'checkpoint_id') else None
-                if checkpoint_id:
-                    checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
-                    if checkpoint_data and checkpoint_data.get("channel_values"):
-                        previous_state = checkpoint_data["channel_values"]
-                        conversation_history = previous_state.get("conversation_history", [])
-                        logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
+                # Try each checkpoint (newest first) to find the one with the most complete history
+                for checkpoint_tuple in checkpoint_list:
+                    checkpoint_id = checkpoint_tuple.checkpoint_id if hasattr(checkpoint_tuple, 'checkpoint_id') else None
+                    if checkpoint_id:
+                        checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
+                        if checkpoint_data and checkpoint_data.get("channel_values"):
+                            previous_state = checkpoint_data["channel_values"]
+                            temp_history = previous_state.get("conversation_history", [])
+                            # Use this checkpoint if it has more messages
+                            if len(temp_history) > len(conversation_history):
+                                conversation_history = temp_history
+                                logger.info(f"Found checkpoint with {len(conversation_history)} messages")
+                logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
         except Exception as e:
             logger.warning(f"Could not load previous state from checkpoint: {str(e)}")
             conversation_history = []
@@ -122,6 +128,8 @@ async def chat(
         
         logger.info(f"Initial state prepared: user_message='{request.message}', conversation_history={len(conversation_history)} messages")
         logger.info(f"Initial state _conversation_id: {initial_state.get('_conversation_id')}")
+        if conversation_history:
+            logger.info(f"Initial conversation_history preview: {conversation_history[-2:] if len(conversation_history) >= 2 else conversation_history}")
         
         # Invoke graph
         logger.info("Starting graph execution...")
@@ -138,9 +146,18 @@ async def chat(
             logger.debug(f"Event next_step: {event.get('next_step') if event else 'None'}")
             logger.debug(f"Event final_response: {event.get('final_response') if event else 'None'}")
             logger.debug(f"Event agent_decision: {event.get('agent_decision') if event else 'None'}")
+            # Log conversation_history updates
+            if event and "conversation_history" in event:
+                hist_len = len(event.get("conversation_history", []))
+                logger.info(f"Event #{event_count} conversation_history length: {hist_len}")
             result = event
         
         logger.info(f"Graph execution completed. Total events: {event_count}")
+        if result and "conversation_history" in result:
+            hist_len = len(result.get("conversation_history", []))
+            logger.info(f"Final result conversation_history length: {hist_len}")
+            if hist_len > 0:
+                logger.info(f"Final conversation_history preview: {result.get('conversation_history', [])[-2:]}")
         
         if not result:
             logger.error("Graph execution returned no result!")
@@ -449,50 +466,44 @@ async def get_conversation_history(
             logger.info(f"[DEBUG] Checkpointer instance: {_shared_checkpointer}")
             
             from langgraph.checkpoint.base import Checkpoint
-            logger.info(f"[DEBUG] Calling _shared_checkpointer.list(config, limit=1)...")
-            checkpoint_list = list(_shared_checkpointer.list(config, limit=1))
-            logger.info(f"[DEBUG] checkpoint_list result: {checkpoint_list}")
-            logger.info(f"[DEBUG] checkpoint_list type: {type(checkpoint_list)}")
+            # Try to get multiple checkpoints to find the one with the most complete history
+            # LangGraph's list() returns checkpoints in reverse chronological order (newest first)
+            logger.info(f"[DEBUG] Calling _shared_checkpointer.list(config, limit=10)...")
+            checkpoint_list = list(_shared_checkpointer.list(config, limit=10))
             logger.info(f"[DEBUG] checkpoint_list length: {len(checkpoint_list)}")
             
+            # Try checkpoints in order (newest first) until we find one with conversation_history
             if checkpoint_list:
-                logger.info(f"[DEBUG] checkpoint_list is not empty, processing first item...")
-                checkpoint_tuple = checkpoint_list[0]
-                logger.info(f"[DEBUG] checkpoint_tuple: {checkpoint_tuple}")
-                logger.info(f"[DEBUG] checkpoint_tuple type: {type(checkpoint_tuple)}")
-                logger.info(f"[DEBUG] checkpoint_tuple attributes: {dir(checkpoint_tuple)}")
-                
-                # The checkpoint data is already in checkpoint_tuple.checkpoint
-                logger.info(f"[DEBUG] Accessing checkpoint_tuple.checkpoint directly...")
-                checkpoint_data = checkpoint_tuple.checkpoint
-                logger.info(f"[DEBUG] checkpoint_data retrieved: {checkpoint_data}")
-                logger.info(f"[DEBUG] checkpoint_data type: {type(checkpoint_data)}")
-                logger.info(f"[DEBUG] checkpoint_data is None: {checkpoint_data is None}")
-                
-                if checkpoint_data:
-                    logger.info(f"[DEBUG] checkpoint_data exists, checking for 'channel_values' key...")
-                    logger.info(f"[DEBUG] checkpoint_data keys: {checkpoint_data.keys() if isinstance(checkpoint_data, dict) else 'Not a dict'}")
-                    logger.info(f"[DEBUG] 'channel_values' in checkpoint_data: {'channel_values' in checkpoint_data if isinstance(checkpoint_data, dict) else 'N/A'}")
-                    logger.info(f"[DEBUG] checkpoint_data.get('channel_values'): {checkpoint_data.get('channel_values') if isinstance(checkpoint_data, dict) else 'N/A'}")
+                # Try each checkpoint (newest first) until we find one with conversation_history
+                for idx, checkpoint_tuple in enumerate(checkpoint_list):
+                    logger.info(f"[DEBUG] Trying checkpoint {idx+1}/{len(checkpoint_list)}...")
                     
-                    if checkpoint_data.get("channel_values"):
-                        logger.info(f"[DEBUG] channel_values found, extracting previous_state...")
-                        previous_state = checkpoint_data["channel_values"]
-                        logger.info(f"[DEBUG] previous_state: {previous_state}")
-                        logger.info(f"[DEBUG] previous_state type: {type(previous_state)}")
-                        logger.info(f"[DEBUG] previous_state keys: {previous_state.keys() if isinstance(previous_state, dict) else 'Not a dict'}")
-                        
-                        conversation_history = previous_state.get("conversation_history", [])
-                        logger.info(f"[DEBUG] conversation_history extracted: {conversation_history}")
-                        logger.info(f"[DEBUG] conversation_history type: {type(conversation_history)}")
-                        logger.info(f"[DEBUG] conversation_history length: {len(conversation_history) if isinstance(conversation_history, list) else 'Not a list'}")
-                        logger.info(f"[DEBUG] conversation_history content: {conversation_history}")
-                        logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
+                    # Use the same method as the chat endpoint for consistency
+                    checkpoint_id = checkpoint_tuple.checkpoint_id if hasattr(checkpoint_tuple, 'checkpoint_id') else None
+                    
+                    if checkpoint_id:
+                        checkpoint_data = _shared_checkpointer.get(config, checkpoint_id)
+                        if checkpoint_data and checkpoint_data.get("channel_values"):
+                            previous_state = checkpoint_data["channel_values"]
+                            temp_history = previous_state.get("conversation_history", [])
+                            
+                            # Use this checkpoint if it has more messages than what we've found so far
+                            if len(temp_history) > len(conversation_history):
+                                conversation_history = temp_history
+                                logger.info(f"[DEBUG] Found checkpoint with {len(conversation_history)} messages (checkpoint {idx+1})")
                     else:
-                        logger.warning(f"[DEBUG] checkpoint_data exists but 'channel_values' is missing or None")
-                        logger.warning(f"[DEBUG] Full checkpoint_data structure: {checkpoint_data}")
-                else:
-                    logger.warning(f"[DEBUG] checkpoint_data is None or falsy")
+                        # Fallback to direct checkpoint access if checkpoint_id is not available
+                        checkpoint_data = checkpoint_tuple.checkpoint if hasattr(checkpoint_tuple, 'checkpoint') else None
+                        if checkpoint_data and isinstance(checkpoint_data, dict) and checkpoint_data.get("channel_values"):
+                            previous_state = checkpoint_data["channel_values"]
+                            temp_history = previous_state.get("conversation_history", [])
+                            if len(temp_history) > len(conversation_history):
+                                conversation_history = temp_history
+                                logger.info(f"[DEBUG] Found checkpoint with {len(conversation_history)} messages (fallback method, checkpoint {idx+1})")
+                
+                logger.info(f"Loaded conversation_history from checkpoint: {len(conversation_history)} messages")
+                if conversation_history:
+                    logger.info(f"[DEBUG] conversation_history content: {conversation_history}")
             else:
                 logger.warning(f"[DEBUG] checkpoint_list is empty - no checkpoints found for conversation_id: {conversation_id}")
                 logger.warning(f"[DEBUG] This might mean no conversation history exists for this conversation_id")

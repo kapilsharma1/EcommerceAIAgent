@@ -28,7 +28,7 @@ export const ChatContainer = ({ conversationId }: ChatContainerProps) => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50">
       <div className="flex-1 flex flex-col overflow-hidden">
         <MessageList messages={messages} isLoading={isLoading} isLoadingHistory={isLoadingHistory} />
         <ChatInput onSendMessage={sendMessage} isLoading={isLoading} />

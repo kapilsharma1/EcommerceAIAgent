@@ -7,6 +7,9 @@ interface MessageBubbleProps {
 
 export const MessageBubble = ({ message }: MessageBubbleProps) => {
   const isUser = message.role === 'user'
+  
+  // Debug logging
+  console.log('MessageBubble rendering:', { id: message.id, role: message.role, isUser, content: message.content.substring(0, 30) })
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>

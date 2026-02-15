@@ -16,6 +16,17 @@ export const MessageList = ({ messages, isLoading, isLoadingHistory = false }: M
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
+  // Debug logging
+  useEffect(() => {
+    console.log('MessageList received messages:', messages.length)
+    console.log('MessageList messages breakdown:', {
+      total: messages.length,
+      user: messages.filter(m => m.role === 'user').length,
+      assistant: messages.filter(m => m.role === 'assistant').length,
+      allMessages: messages.map(m => ({ id: m.id, role: m.role, content: m.content.substring(0, 30) }))
+    })
+  }, [messages])
+
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 space-y-2">
       {messages.length === 0 && !isLoadingHistory && (
@@ -35,9 +46,10 @@ export const MessageList = ({ messages, isLoading, isLoadingHistory = false }: M
         </div>
       )}
       
-      {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
-      ))}
+      {messages.map((message) => {
+        console.log('Rendering message:', { id: message.id, role: message.role, content: message.content.substring(0, 30) })
+        return <MessageBubble key={message.id} message={message} />
+      })}
       
       {isLoading && <TypingIndicator />}
       
