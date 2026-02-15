@@ -2,7 +2,7 @@ import axios from 'axios'
 import type { ChatRequest, ChatResponse } from '@/types/chat'
 import type { ApprovalRequest, ApprovalResponse } from '@/types/approval'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ecommerceaiagent.onrender.com/api/v1'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
