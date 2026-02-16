@@ -1,6 +1,7 @@
 """Configuration management using Pydantic Settings."""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 
 class Settings(BaseSettings):
@@ -36,13 +37,56 @@ class Settings(BaseSettings):
     
     @property
     def get_database_url(self) -> str:
-        """Get database URL, constructing it if not provided."""
+        """Get database URL, constructing it if not provided.
+        
+        Automatically strips sslmode parameter from URL as asyncpg doesn't support it.
+        SSL is configured separately via get_ssl_config().
+        """
         if self.database_url:
-            return self.database_url
+            # Parse URL and remove sslmode parameter (asyncpg doesn't support it)
+            parsed = urlparse(self.database_url)
+            query_params = parse_qs(parsed.query)
+            
+            # Remove sslmode from query parameters
+            query_params.pop('sslmode', None)
+            
+            # Rebuild query string without sslmode
+            new_query = urlencode(query_params, doseq=True)
+            
+            # Reconstruct URL
+            new_parsed = parsed._replace(query=new_query)
+            url = urlunparse(new_parsed)
+            
+            return url
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+    
+    def get_ssl_config(self) -> dict:
+        """Get SSL configuration for asyncpg based on database_url.
+        
+        Checks for sslmode parameter in the original database_url and converts it
+        to asyncpg-compatible SSL configuration.
+        
+        Returns:
+            dict with 'ssl' key set to True/False for asyncpg connect_args
+        """
+        if self.database_url:
+            parsed = urlparse(self.database_url)
+            query_params = parse_qs(parsed.query)
+            sslmode = query_params.get('sslmode', [''])[0]
+            
+            if sslmode == 'require' or sslmode == 'prefer':
+                return {'ssl': True}  # asyncpg uses True for required SSL
+            elif sslmode == 'disable':
+                return {'ssl': False}
+            # Default to require SSL for cloud databases (Supabase, etc.)
+            # If no sslmode specified but URL contains cloud domains, require SSL
+            if 'supabase' in parsed.netloc or 'amazonaws' in parsed.netloc or 'pooler' in parsed.netloc:
+                return {'ssl': True}
+            return {'ssl': False}
+        return {'ssl': False}
 
 
 # Global settings instance

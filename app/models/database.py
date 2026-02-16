@@ -89,11 +89,15 @@ class OrderDB(Base):
 
 
 # Database engine and session factory
+# Get SSL configuration for asyncpg (handles sslmode parameter conversion)
+ssl_config = settings.get_ssl_config()
+
 engine = create_async_engine(
     settings.get_database_url,
     echo=False,
     future=True,
     pool_pre_ping=True,
+    connect_args=ssl_config,
 )
 
 AsyncSessionLocal = async_sessionmaker(
