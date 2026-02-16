@@ -109,8 +109,10 @@ class Settings(BaseSettings):
                 connect_args['ssl'] = False
             
             # Disable prepared statement cache for pgbouncer connections
+            # PgBouncer doesn't support prepared statements properly
             if is_pgbouncer:
                 connect_args['statement_cache_size'] = 0
+                connect_args['prepared_statement_cache_size'] = 0
             
             return connect_args
         return {'ssl': False}

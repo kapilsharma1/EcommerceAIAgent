@@ -3,6 +3,7 @@ from datetime import datetime, date
 from sqlalchemy import String, DateTime, Enum as SQLEnum, Text, Date, Float, Boolean
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.models.domain import ApprovalStatus, OrderStatus
 
@@ -90,14 +91,14 @@ class OrderDB(Base):
 
 # Database engine and session factory
 # Get SSL configuration for asyncpg (handles sslmode parameter conversion)
-ssl_config = settings.get_ssl_config()
+connect_args = settings.get_ssl_config()
 
 engine = create_async_engine(
     settings.get_database_url,
+    poolclass=NullPool,  # Very important for PgBouncer - let PgBouncer handle pooling
     echo=False,
     future=True,
-    pool_pre_ping=True,
-    connect_args=ssl_config,
+    connect_args=connect_args,
 )
 
 AsyncSessionLocal = async_sessionmaker(
