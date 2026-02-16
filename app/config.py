@@ -108,11 +108,12 @@ class Settings(BaseSettings):
             else:
                 connect_args['ssl'] = False
             
-            # Disable prepared statement cache for pgbouncer connections
-            # PgBouncer doesn't support prepared statements properly
-            if is_pgbouncer:
+            # Disable prepared statement cache for pgbouncer/cloud database connections
+            # PgBouncer (used by Supabase pooler) doesn't support prepared statements properly
+            # Always set these for cloud databases to avoid prepared statement errors
+            if is_pgbouncer or is_cloud_db:
                 connect_args['statement_cache_size'] = 0
-                connect_args['prepared_statement_cache_size'] = 0
+                # connect_args['prepared_statement_cache_size'] = 0
             
             return connect_args
         return {'ssl': False}
