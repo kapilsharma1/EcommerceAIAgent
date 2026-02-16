@@ -2,6 +2,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+import ssl
 
 
 class Settings(BaseSettings):
@@ -67,24 +68,34 @@ class Settings(BaseSettings):
         """Get SSL configuration for asyncpg based on database_url.
         
         Checks for sslmode parameter in the original database_url and converts it
-        to asyncpg-compatible SSL configuration.
+        to asyncpg-compatible SSL configuration. For Supabase and cloud databases,
+        creates an SSL context that doesn't verify certificates to handle
+        self-signed certificates in the chain.
         
         Returns:
-            dict with 'ssl' key set to True/False for asyncpg connect_args
+            dict with 'ssl' key set to SSL context or True/False for asyncpg connect_args
         """
         if self.database_url:
             parsed = urlparse(self.database_url)
             query_params = parse_qs(parsed.query)
             sslmode = query_params.get('sslmode', [''])[0]
             
-            if sslmode == 'require' or sslmode == 'prefer':
-                return {'ssl': True}  # asyncpg uses True for required SSL
-            elif sslmode == 'disable':
+            # Check if this is a cloud database (Supabase, AWS, etc.)
+            is_cloud_db = (
+                'supabase' in parsed.netloc or 
+                'amazonaws' in parsed.netloc or 
+                'pooler' in parsed.netloc
+            )
+            
+            if sslmode == 'disable':
                 return {'ssl': False}
-            # Default to require SSL for cloud databases (Supabase, etc.)
-            # If no sslmode specified but URL contains cloud domains, require SSL
-            if 'supabase' in parsed.netloc or 'amazonaws' in parsed.netloc or 'pooler' in parsed.netloc:
-                return {'ssl': True}
+            elif sslmode == 'require' or sslmode == 'prefer' or is_cloud_db:
+                # For cloud databases, create SSL context without certificate verification
+                # to handle self-signed certificates in the chain
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                return {'ssl': ssl_context}
             return {'ssl': False}
         return {'ssl': False}
 
