@@ -65,15 +65,18 @@ class Settings(BaseSettings):
         )
     
     def get_ssl_config(self) -> dict:
-        """Get SSL configuration for asyncpg based on database_url.
+        """Get SSL configuration and connection args for asyncpg based on database_url.
         
         Checks for sslmode parameter in the original database_url and converts it
         to asyncpg-compatible SSL configuration. For Supabase and cloud databases,
         creates an SSL context that doesn't verify certificates to handle
         self-signed certificates in the chain.
         
+        Also disables prepared statement cache for pgbouncer connections (Supabase pooler)
+        as pgbouncer doesn't support prepared statements properly.
+        
         Returns:
-            dict with 'ssl' key set to SSL context or True/False for asyncpg connect_args
+            dict with connection arguments for asyncpg (ssl, statement_cache_size, etc.)
         """
         if self.database_url:
             parsed = urlparse(self.database_url)
@@ -87,16 +90,29 @@ class Settings(BaseSettings):
                 'pooler' in parsed.netloc
             )
             
+            # Check if using pgbouncer (Supabase connection pooler)
+            is_pgbouncer = 'pooler' in parsed.netloc
+            
+            connect_args = {}
+            
+            # Configure SSL
             if sslmode == 'disable':
-                return {'ssl': False}
+                connect_args['ssl'] = False
             elif sslmode == 'require' or sslmode == 'prefer' or is_cloud_db:
                 # For cloud databases, create SSL context without certificate verification
                 # to handle self-signed certificates in the chain
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
-                return {'ssl': ssl_context}
-            return {'ssl': False}
+                connect_args['ssl'] = ssl_context
+            else:
+                connect_args['ssl'] = False
+            
+            # Disable prepared statement cache for pgbouncer connections
+            if is_pgbouncer:
+                connect_args['statement_cache_size'] = 0
+            
+            return connect_args
         return {'ssl': False}
 
 
